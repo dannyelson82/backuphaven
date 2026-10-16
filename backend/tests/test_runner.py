@@ -309,3 +309,21 @@ def test_leftovers_of_an_interrupted_run_are_removed_at_start(unraid: Settings) 
         "my-notes.partial",
     ]
     assert remove_leftovers(backups) == []
+
+
+def test_an_app_whose_folder_is_gone_is_skipped_not_failed(unraid: Settings, db: Database) -> None:
+    """Unraid keeps the template of a removed container (ADR-0011)."""
+    (unraid.templates_dir / "my-old.xml").write_text(
+        template_xml("old", "someone/old", ("/config", "/mnt/user/appdata/old", "rw"))
+    )
+    run_id = Runner(db, unraid, bundled()).run_now(only=["old", "Tool"])
+    with db.read() as session:
+        run = session.get(Run, run_id)
+        apps = {a.app: a for a in session.query(RunApp).filter_by(run_id=run_id)}
+    assert run is not None and run.status == "ok" and run.verified
+    assert run.summary is not None and run.summary["skipped"] == 1
+    assert apps["old"].status == "skipped" and apps["old"].files == 0
+    assert "not installed" in apps["old"].problems["warnings"][0]  # type: ignore[index]
+    assert apps["Tool"].status == "ok"
+    files = contents(unraid.backups_dir / run.archive)  # type: ignore[operator]
+    assert not any(name.startswith("apps/old/") for name in files)

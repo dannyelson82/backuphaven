@@ -30,7 +30,7 @@ from backuphaven.sqlite_tools import SnapshotError, check, snapshot
 
 logger = logging.getLogger(__name__)
 
-Status = Literal["ok", "warning", "failed"]
+Status = Literal["ok", "warning", "failed", "skipped"]
 ARCHIVE_PREFIX = "backuphaven-"
 ARCHIVE_SUFFIX = ".tar.zst"
 MANIFEST_SUFFIX = ".manifest.json"
@@ -97,6 +97,11 @@ class AppResult:
         if len(self.errors) < 100:
             self.errors.append(text)
 
+    def skip(self, reason: str) -> None:
+        """Not backed up, on purpose: not a failure (ADR-0011)."""
+        self.status = "skipped"
+        self.warnings = [reason]
+
     def warn(self, text: str) -> None:
         if self.status == "ok":
             self.status = "warning"
@@ -105,6 +110,7 @@ class AppResult:
 
 
 def worst(statuses: list[Status]) -> Status:
+    """The run's result from its apps'; skipped apps don't count (ADR-0011)."""
     if "failed" in statuses:
         return "failed"
     return "warning" if "warning" in statuses else "ok"
@@ -364,6 +370,11 @@ class Runner:
             },
         )
         base = f"apps/{key}"
+        gone = self._not_installed(app)
+        if gone is not None:
+            result.skip(gone)
+            logger.debug("app skipped", extra={"app": app.name, "reason": gone})
+            return result
         for missing in app.missing:
             result.warn(
                 f"{missing.target} is on the '{missing.share}' share, which BackupHaven "
@@ -396,6 +407,21 @@ class Runner:
             },
         )
         return result
+
+    def _not_installed(self, app: discovery.App) -> str | None:
+        """Why an app looks removed, or None. Removed containers keep their Unraid
+        template; when none of the app's data folders exist any more, there is
+        nothing to back up (ADR-0011). Apps on unmounted shares aren't judged."""
+        if not app.folders or app.missing:
+            return None
+        for folder in app.folders:
+            try:
+                if resolve_app_folder(self._settings.data_root, folder.host).exists():
+                    return None
+            except (OutsideShareError, ValueError):
+                return None  # reported properly by the backup itself
+        hosts = ", ".join(f.host for f in app.folders)
+        return f"not installed: {hosts} doesn't exist (container removed?)"
 
     def _backup_folder(
         self,
@@ -586,6 +612,7 @@ class Runner:
             run.summary = {
                 "apps": len(results),
                 "failed": sum(r.status == "failed" for r in results),
+                "skipped": sum(r.status == "skipped" for r in results),
                 "warnings": sum(r.status == "warning" for r in results),
                 "files": sum(r.files for r in results),
                 "seconds": round(seconds, 1),

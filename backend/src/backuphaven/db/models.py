@@ -83,7 +83,7 @@ class AuditLog(Base):
     detail: Mapped[dict[str, Any] | None] = mapped_column(default=None)
 
 
-RUN_STATUSES = ("running", "ok", "warning", "failed", "cancelled")
+RUN_STATUSES = ("running", "ok", "warning", "failed", "cancelled", "skipped")
 
 
 class Run(Base):

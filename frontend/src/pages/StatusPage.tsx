@@ -42,6 +42,7 @@ const STATUS: Record<RunStatus, { color: string; label: string }> = {
   warning: { color: 'yellow', label: 'Warnings' },
   failed: { color: 'red', label: 'Failed' },
   cancelled: { color: 'gray', label: 'Cancelled' },
+  skipped: { color: 'gray', label: 'Skipped' },
 };
 
 const DB_STATUS: Record<DbCheck['status'], { color: string; label: string }> = {
@@ -206,13 +207,15 @@ function DatabaseHealth({ checks }: { checks: DbCheck[] }) {
 }
 
 function AppResults({ apps }: { apps: RunApp[] }) {
+  const done = apps.filter((app) => app.status !== 'skipped');
+  const skipped = apps.filter((app) => app.status === 'skipped');
   return (
     <Card withBorder>
       <Title order={4} mb="sm">
         Apps in the last backup
       </Title>
       <Stack gap="sm">
-        {apps.map((app) => (
+        {done.map((app) => (
           <Stack key={app.app} gap={2}>
             <Group justify="space-between">
               <Group gap="xs">
@@ -232,6 +235,18 @@ function AppResults({ apps }: { apps: RunApp[] }) {
             )}
           </Stack>
         ))}
+        {skipped.length > 0 && (
+          <Stack gap={4}>
+            <Text fw={500}>Skipped ({skipped.length})</Text>
+            <List size="sm" c="dimmed">
+              {skipped.map((app) => (
+                <List.Item key={app.app}>
+                  {app.app}: {app.warnings[0] ?? 'skipped'}
+                </List.Item>
+              ))}
+            </List>
+          </Stack>
+        )}
       </Stack>
     </Card>
   );

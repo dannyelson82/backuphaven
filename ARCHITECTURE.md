@@ -80,7 +80,7 @@ A run, step by step:
 1. **Discover** apps from the Unraid templates (`/boot/config/plugins/dockerMan/templates-user/*.xml`):
    container name, image, appdata folders. Each app is matched to a plugin by
    image name; apps with no plugin get the **generic plugin**.
-2. **For each enabled app**, in the configured order, the plugin's backup steps
+2. **For each app in the backup schedule** (empty by default; ADR-0011), in the configured order, the plugin's backup steps
    run through the plugin host:
    - snapshot mode: live-copy each SQLite database, then copy the other files;
    - stop mode: stop the container (through the proxy), copy everything, start it.
@@ -172,8 +172,11 @@ called BackupHaven), so a restored server gets its backup settings back too.
   a database on `appdata`); all of them are backed up.
 - With the socket proxy configured, also asks Docker which containers exist and
   which are running, and warns about templates whose container is gone.
-- New apps found at the start of a run follow the "new apps" setting: **back up
-  with the generic plugin** (default) or **ask me first**.
+- Apps are backed up only once they are added to the **backup schedule**, which
+  is empty by default (ADR-0011). New apps show up on the Apps page.
+- An app in a run whose data folders no longer exist (its container was removed
+  but Unraid kept the template) is **skipped**, not failed, and listed at the end
+  of the run's results (ADR-0011).
 
 ### 6.2 Plugin host
 
@@ -354,7 +357,7 @@ start if more than a set time has passed (default: off, alert only).
 
 ## 7. Settings (owner-facing)
 
-- **Apps**: per app on/off, plugin, mode (snapshot/stop), the plugin's own
+- **Apps**: add to / remove from the backup schedule (ADR-0011), plugin, mode (snapshot/stop), the plugin's own
   settings, extra include/exclude patterns, order.
 - **Schedule**: time, days, Run now.
 - **Keeping backups**: nightly/weekly/monthly counts, minimum free space.
@@ -390,7 +393,7 @@ ReelHaven. A WebSocket pushes run progress.
 |---|---|
 | **Dashboard** | Last run (status, size, time), next run, Run now, database health per app, storage and free space, anything that needs attention at the top |
 | **Backups** | One row per archive: date, result, size, checks. Open one: browse contents, download, restore an app |
-| **Apps** | Every container found: on/off, plugin, mode, last size and checks; open one for its settings |
+| **Apps** | Every container found: in the backup schedule or not (**Add to backup schedule**), plugin, mode, last size and checks; open one for its settings |
 | **Plugins** | Installed plugins, their permissions, updates; install from the catalog |
 | **Settings** | Schedule, keeping backups, where backups go, alerts, security |
 | **Guide** | Built-in user guide, from `docs/guide/` |

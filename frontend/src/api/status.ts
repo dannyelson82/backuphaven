@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './client';
 
-export type RunStatus = 'running' | 'ok' | 'warning' | 'failed' | 'cancelled';
+export type RunStatus = 'running' | 'ok' | 'warning' | 'failed' | 'cancelled' | 'skipped';
 
 export interface Run {
   id: number;
@@ -17,6 +17,7 @@ export interface Run {
     apps: number;
     failed: number;
     warnings: number;
+    skipped?: number;
     files: number;
     seconds: number;
     // Set when Run now was limited to some apps.

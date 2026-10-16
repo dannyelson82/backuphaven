@@ -43,6 +43,8 @@ export const state = (overrides: Record<string, unknown> = {}) => ({
 export const EMPTY_STATUS = {
   running: null,
   scheduled_apps: [] as string[],
+  next_run: null as string | null,
+  missed: [] as { due: string; reason: string }[],
   last_run: null,
   last_good_run: null,
   apps: 0,

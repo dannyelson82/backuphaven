@@ -68,6 +68,8 @@ export interface Progress {
 export interface Status {
   running: Progress | null;
   scheduled_apps: string[];
+  next_run: string | null;
+  missed: { due: string; reason: string }[];
   last_run: Run | null;
   last_good_run: Run | null;
   apps: number;

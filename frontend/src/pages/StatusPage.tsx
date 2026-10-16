@@ -282,6 +282,17 @@ export function StatusPage() {
           </List>
         </Alert>
       )}
+      {status.data && status.data.missed.length > 0 && (
+        <Alert color="yellow" title="A scheduled backup was missed">
+          <List size="sm">
+            {status.data.missed.map((m) => (
+              <List.Item key={m.due}>
+                {formatDate(m.due)}: {m.reason}
+              </List.Item>
+            ))}
+          </List>
+        </Alert>
+      )}
       {lastRun?.status === 'failed' && lastRun.error && (
         <Alert color="red" title="The last backup failed">
           {lastRun.error}
@@ -347,7 +358,18 @@ export function StatusPage() {
             ) : (
               <Text size="sm" c="dimmed">
                 Run now backs up the {scheduled.length === 1 ? 'app' : `${scheduled.length} apps`}{' '}
-                in the backup schedule: {scheduled.join(', ')}.
+                in the backup schedule: {scheduled.join(', ')}.{' '}
+                {status.data.next_run ? (
+                  <>Next backup: {formatDate(status.data.next_run)}.</>
+                ) : (
+                  <>
+                    Automatic backups are off (
+                    <Anchor component={Link} to="/settings" size="sm">
+                      Settings
+                    </Anchor>
+                    ).
+                  </>
+                )}
               </Text>
             )}
             <ChooseApps

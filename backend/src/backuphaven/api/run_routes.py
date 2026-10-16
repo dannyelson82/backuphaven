@@ -14,6 +14,7 @@ from backuphaven.api.deps import DbDep, InteractiveDep, csrf_protect, require_se
 from backuphaven.config import Settings
 from backuphaven.db import DbCheck, Run, RunApp
 from backuphaven.runner import NoSuchAppsError, Runner
+from backuphaven.scheduler import Scheduler
 
 router = APIRouter(dependencies=[Depends(require_setup_done), Depends(csrf_protect)])
 
@@ -84,9 +85,17 @@ class MissingShareView(BaseModel):
     share: str
 
 
+class MissedRunView(BaseModel):
+    due: datetime
+    reason: str
+
+
 class StatusView(BaseModel):
     running: ProgressView | None
     scheduled_apps: list[str] = []
+    next_run: datetime | None = None
+    # Scheduled backups missed since the last backup started.
+    missed: list[MissedRunView] = []
     last_run: RunView | None
     last_good_run: RunView | None
     apps: int
@@ -202,6 +211,7 @@ def get_run(run_id: int, db: DbDep, _principal: InteractiveDep) -> RunDetail:
 @router.get("/status")
 def get_status(request: Request, db: DbDep, _principal: InteractiveDep) -> StatusView:
     settings: Settings = request.app.state.settings
+    scheduler: Scheduler = request.app.state.scheduler
     progress = _runner(request).progress
     apps = discovery.discover(settings.templates_dir, settings.data_root)
     with db.read() as session:
@@ -237,6 +247,12 @@ def get_status(request: Request, db: DbDep, _principal: InteractiveDep) -> Statu
             phase=progress.phase,
         ),
         scheduled_apps=scheduled_apps,
+        next_run=scheduler.next_run(),
+        missed=[
+            MissedRunView(due=m.due, reason=m.reason)
+            for m in scheduler.missed()
+            if last is None or m.due > last.started_at
+        ],
         last_run=None if last is None else _view(last),
         last_good_run=None if good is None else _view(good),
         apps=len(apps),

@@ -39,8 +39,18 @@ If BackupHaven is restarted during a backup, that backup is marked **Failed**
 ("interrupted by a restart"), and the half-written file is deleted the next
 time BackupHaven starts.
 
-Coming in version 0.2: backups every night, and old backups cleared out
-automatically.
+## Every night
+
+BackupHaven also backs up the apps in the backup schedule on its own, every
+night at 03:00 unless you change it in [Settings](settings.md#schedule). The
+Dashboard shows when the next backup is due.
+
+If the server (or BackupHaven) is off when a backup is due, or another backup
+is still running, that backup is **missed**: the Dashboard says so, with the
+reason, until the next backup. A missed backup isn't made up later; press
+**Run now** if you want one straight away.
+
+Coming next: old backups cleared out automatically.
 
 ## What a backup does
 

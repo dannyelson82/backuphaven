@@ -1,0 +1,118 @@
+name: Image
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/dannyelson82/backuphaven
+
+jobs:
+  image:
+    name: Build, test and publish image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: backuphaven:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test
+        run: |
+          set -eu
+          docker run -d --name bh -p 7272:7272 backuphaven:ci
+          for _ in $(seq 1 30); do
+            status="$(docker inspect -f '{{.State.Health.Status}}' bh)"
+            [ "$status" = healthy ] && break
+            sleep 2
+          done
+          docker ps -a
+          test "$(docker inspect -f '{{.State.Health.Status}}' bh)" = healthy
+          curl -fsS http://127.0.0.1:7272/healthz
+          curl -fsS http://127.0.0.1:7272/api/v1/version | grep -q '"name":"BackupHaven"'
+          curl -fsS http://127.0.0.1:7272/ | grep -q '<title>BackupHaven</title>'
+          # Root inside the container, but only the capabilities ADR-0006 allows:
+          # chown, dac_override, fowner, fsetid, setgid, setuid = 0xdb; no new privileges.
+          docker exec bh sh -c 'for p in /proc/[0-9]*; do
+              if tr "\0" " " < "$p/cmdline" 2>/dev/null | grep -q "[b]in/backuphaven"; then
+                grep -E "^(Uid|CapEff|CapBnd|NoNewPrivs)" "$p/status"; fi; done' | tee caps.txt
+          grep -E '^Uid:\s+0\b' caps.txt
+          grep -E '^CapEff:\s+00000000000000db$' caps.txt
+          grep -E '^CapBnd:\s+00000000000000db$' caps.txt
+          grep -E '^NoNewPrivs:\s+1$' caps.txt
+          docker exec bh stat -c '%u:%g %n' /config /backups | tee owners.txt
+          test "$(grep -c '^99:100 ' owners.txt)" = 2
+          docker logs bh 2>&1 | tail -n 20
+          docker rm -f bh
+
+      - name: Vulnerability report
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: backuphaven:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: "0"
+
+      - name: Fail on fixable critical vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: backuphaven:ci
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          skip-setup-trivy: true
+
+      - name: Image tags
+        id: meta
+        if: github.event_name != 'pull_request'
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=edge,branch=main
+            type=semver,pattern={{version}}
+            type=sha,format=short
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha

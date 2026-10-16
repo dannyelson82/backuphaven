@@ -16,7 +16,7 @@ sensible history of backups, and makes restoring an app easy and reversible.
   backups is a plugin, so support for more apps and providers can be added by
   anyone. Plugins run locked in, with permissions you approve.
 
-> **Status: early releases (0.0.3.0).** Nightly backups, keep rules, database
+> **Status: early releases (0.0.3.1).** Nightly backups, keep rules, database
 > checks, browsing and downloading backups, and restoring an app with undo
 > work. Alerts and stop mode come next ([roadmap](ARCHITECTURE.md#13-roadmap)).
 >

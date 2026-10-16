@@ -1,6 +1,6 @@
 [project]
 name = "backuphaven"
-version = "0.0.3.0"
+version = "0.0.3.1"
 description = "Simple, plugin-based, automated nightly backups for the apps on your Unraid server"
 license = "GPL-3.0-or-later"
 requires-python = ">=3.13"

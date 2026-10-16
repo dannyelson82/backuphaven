@@ -50,6 +50,7 @@ class DbCheckView(BaseModel):
     size: int
     messages: list[str]
     unknown_collations: list[str]
+    skipped_tables: list[str] = []
 
 
 class RunDetail(RunView):
@@ -105,6 +106,7 @@ def _db_view(row: DbCheck) -> DbCheckView:
         size=row.size,
         messages=list(extra.get("messages", [])),
         unknown_collations=list(extra.get("unknown_collations", [])),
+        skipped_tables=list(extra.get("skipped_tables", [])),
     )
 
 

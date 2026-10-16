@@ -30,6 +30,7 @@ export interface DbCheck {
   size: number;
   messages: string[];
   unknown_collations: string[];
+  skipped_tables: string[];
 }
 
 export interface RunApp {

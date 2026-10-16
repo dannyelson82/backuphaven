@@ -51,7 +51,9 @@ The **Database health** table lists every database from the last backup:
 
 - **Healthy**: the copy was checked and is fine.
 - **quick check** next to it: the database uses features BackupHaven can't fully
-  check (Plex does), so its structure was checked instead.
+  check (Plex does), so its structure was checked instead. Plex's search index
+  can't be opened outside Plex, so it is left out of the check; everything else
+  is checked, and the search index is still in the backup.
 - **Damaged**: the copy has errors, which means the app's own database is
   damaged. Look at the app soon, and keep older backups: they may hold a healthy
   copy.

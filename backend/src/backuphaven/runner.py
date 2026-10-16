@@ -338,6 +338,7 @@ class Runner:
                 seconds=round(snap.seconds + checked.seconds, 2),
                 messages=list(checked.messages),
                 unknown_collations=list(checked.unknown_collations),
+                skipped_tables=list(checked.skipped_tables),
             )
             stored = writer.add_file(f"{base}/{rel}", copy, source.stat())
             result.files += 1
@@ -418,6 +419,7 @@ class Runner:
                             messages={
                                 "messages": d.get("messages", []),
                                 "unknown_collations": d.get("unknown_collations", []),
+                                "skipped_tables": d.get("skipped_tables", []),
                             },
                         )
                     )

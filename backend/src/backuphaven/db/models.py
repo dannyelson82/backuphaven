@@ -101,6 +101,8 @@ class Run(Base):
     verified: Mapped[bool] = mapped_column(default=False)
     error: Mapped[str | None] = mapped_column(Text, default=None)
     summary: Mapped[dict[str, Any] | None] = mapped_column(default=None)
+    # Set when the keep rules (or the owner) deleted the backup file.
+    deleted_at: Mapped[datetime | None] = mapped_column(default=None)
 
 
 class RunApp(Base):

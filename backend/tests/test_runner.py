@@ -383,3 +383,14 @@ def test_scheduled_apps_whose_template_is_gone_are_reported_as_skipped(
         assert apps["sonarr"]["status"] == "skipped"
         assert "not found" in apps["sonarr"]["warnings"][0]
         assert apps["Tool"]["status"] == "ok"
+
+
+def test_backups_started_in_the_same_second_get_different_names() -> None:
+    from datetime import UTC, datetime
+
+    from backuphaven.runner import archive_name
+
+    now = datetime(2026, 10, 17, 3, 0, 0, tzinfo=UTC)
+    taken = {"backuphaven-2026-10-17T030000.tar.zst", "backuphaven-2026-10-17T030000-2.tar.zst"}
+    assert archive_name(now) == "backuphaven-2026-10-17T030000.tar.zst"
+    assert archive_name(now, taken.__contains__) == "backuphaven-2026-10-17T030000-3.tar.zst"

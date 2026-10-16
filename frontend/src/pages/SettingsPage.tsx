@@ -1,5 +1,6 @@
 import { Alert, Card, Code, Loader, Stack, Switch, Table, Text, Title } from '@mantine/core';
 import { errorMessage } from '../api/client';
+import { KeepingSettings } from '../components/KeepingSettings';
 import { ScheduleSettings } from '../components/ScheduleSettings';
 import { useDeveloperSettings, useSetDiagnostics } from '../api/developer';
 import { formatBytes, timeAgo } from '../format';
@@ -64,6 +65,7 @@ export function SettingsPage() {
     <Stack gap="md">
       <Title order={3}>Settings</Title>
       <ScheduleSettings />
+      <KeepingSettings />
       <Developer />
     </Stack>
   );

@@ -50,7 +50,29 @@ is still running, that backup is **missed**: the Dashboard says so, with the
 reason, until the next backup. A missed backup isn't made up later; press
 **Run now** if you want one straight away.
 
-Coming next: old backups cleared out automatically.
+## Old backups
+
+After every backup, older backups are deleted, apart from the ones the
+[keep settings](settings.md#keeping-backups) keep: by default the last 7 days,
+one a week for 4 weeks and one a month for 6 months. Whatever the settings, these
+are never deleted:
+
+- the newest good backup;
+- for every database, the newest backup with a **healthy** copy of it, however
+  old. If a database gets damaged and stays that way, the last good copy is kept;
+- a failed backup, until a newer good one exists.
+
+Backups made with **Choose apps…** are kept for as many days as nightly
+backups, and never take a nightly backup's place.
+
+Only BackupHaven's own backup files are ever deleted. Other files in the backups
+folder are left alone.
+
+## Running out of space
+
+A backup doesn't start when the backups disk has less free space than the
+**Minimum free space** setting (2 GB by default), and stops cleanly if the disk
+fills up during a backup. The Dashboard shows the free space.
 
 ## What a backup does
 

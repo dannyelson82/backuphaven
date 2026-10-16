@@ -81,3 +81,34 @@ it('changes when the scheduled backup runs', async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Save' }));
   expect(await screen.findByText('Automatic backups are off.')).toBeInTheDocument();
 });
+
+it('changes how many backups are kept', async () => {
+  let saved = { nightly: 7, weekly: 4, monthly: 6, min_free_gb: 2 };
+  const calls = mockApi({
+    'GET auth/state': LOGGED_IN,
+    'GET status': { body: EMPTY_STATUS },
+    'GET settings/keeping': () => ({ body: saved }),
+    'PUT settings/keeping': (init) => {
+      saved = JSON.parse(String(init?.body));
+      return { body: saved };
+    },
+  });
+  window.location.hash = '#/settings';
+  render(<App />);
+  const nightly = await screen.findByRole('textbox', { name: /^Nightly/ });
+  await userEvent.clear(nightly);
+  await userEvent.type(nightly, '14');
+  const free = screen.getByRole('textbox', { name: /^Minimum free space/ });
+  await userEvent.clear(free);
+  await userEvent.type(free, '50');
+  const saveButtons = screen.getAllByRole('button', { name: 'Save' });
+  await userEvent.click(saveButtons[saveButtons.length - 1]);
+  expect(await screen.findByText('Saved. Used after the next backup.')).toBeInTheDocument();
+  const put = calls.find((c) => c.key === 'PUT settings/keeping');
+  expect(JSON.parse(String(put?.init?.body))).toEqual({
+    nightly: 14,
+    weekly: 4,
+    monthly: 6,
+    min_free_gb: 50,
+  });
+});

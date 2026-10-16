@@ -14,6 +14,7 @@ from backuphaven.api import (
     app_routes,
     auth_routes,
     developer_routes,
+    keeping_routes,
     run_routes,
     schedule_routes,
     security_routes,
@@ -117,6 +118,7 @@ def create_app(
         app_routes,
         run_routes,
         schedule_routes,
+        keeping_routes,
         developer_routes,
     ):
         app.include_router(module.router, prefix="/api/v1")

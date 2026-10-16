@@ -33,6 +33,8 @@ export interface DbCheck {
   messages: string[];
   unknown_collations: string[];
   skipped_tables: string[];
+  seconds?: number;
+  timing?: Record<string, unknown>;
 }
 
 export interface RunApp {

@@ -412,13 +412,26 @@ class Runner:
         copy = work / f"{safe_name(result.name)}-{index}.db"
         record: dict[str, Any] = {"path": rel}
         try:
+            wal = Path(f"{source}-wal")
+            wal_bytes = wal.stat().st_size if wal.exists() else 0
             snap = snapshot(source, copy)
             checked = check(copy)
+            timing = {
+                "copy_method": snap.method,
+                "copy_seconds": round(snap.seconds, 2),
+                "check_seconds": round(checked.seconds, 2),
+                "wal_bytes": wal_bytes,
+            }
+            logger.info(
+                "database backed up",
+                extra={"app": result.name, "db": rel, "status": checked.status, **timing},
+            )
             record.update(
                 status=checked.status,
                 mode=checked.mode,
                 size=snap.size,
                 seconds=round(snap.seconds + checked.seconds, 2),
+                timing=timing,
                 messages=list(checked.messages),
                 unknown_collations=list(checked.unknown_collations),
                 skipped_tables=list(checked.skipped_tables),
@@ -508,6 +521,7 @@ class Runner:
                                 "messages": d.get("messages", []),
                                 "unknown_collations": d.get("unknown_collations", []),
                                 "skipped_tables": d.get("skipped_tables", []),
+                                "timing": d.get("timing", {}),
                             },
                         )
                     )

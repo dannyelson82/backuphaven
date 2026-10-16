@@ -1,0 +1,249 @@
+"""Plugin fixtures: proof that a plugin's backup restores (ADR-0013).
+
+A fixture is a small, made-up sample of an app's data folders, in YAML::
+
+    plugin: sonarr
+    image: lscr.io/linuxserver/sonarr:latest
+    folders:
+      - target: /config            # path inside the container
+        files:                     # path: text
+          config.xml: "<Config><ApiKey>example</ApiKey></Config>"
+          logs/sonarr.txt: "log line"
+        sqlite: [sonarr.db]        # small SQLite databases to create
+        links:                     # path: link target
+          latest: config.xml
+      - target: /data
+        whole_share: true          # mapped to a whole share (plugin share_folders)
+        files: {...}
+    must_restore: [/config/config.xml, /config/sonarr.db]   # target + path
+    must_not_backup: [/config/logs/sonarr.txt]
+
+``round_trip`` builds a pretend Unraid server from it (template, data shares),
+backs the app up with the plugin, deletes the app's folders as if the server were
+new, restores, and returns every problem found. An empty list means the plugin
+keeps its promise for this sample.
+"""
+
+import fnmatch
+import shutil
+import sqlite3
+import tempfile
+from pathlib import Path, PurePosixPath
+from typing import Annotated
+from xml.sax.saxutils import escape
+
+import yaml
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+
+from backuphaven.plugins.manifest import Manifest
+
+APP_SHARE = "appdata"
+SAMPLE_ROWS = 25
+
+Rel = Annotated[str, StringConstraints(min_length=1, max_length=300)]
+
+
+class FixtureFolder(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target: Annotated[str, StringConstraints(pattern=r"^/.*$")]
+    whole_share: bool = False
+    files: dict[Rel, str] = Field(default_factory=dict)
+    sqlite: list[Rel] = Field(default_factory=list)
+    links: dict[Rel, str] = Field(default_factory=dict)
+
+
+class Fixture(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    plugin: str
+    image: str
+    folders: list[FixtureFolder] = Field(min_length=1)
+    must_restore: list[str] = Field(min_length=1)
+    must_not_backup: list[str] = Field(default_factory=list)
+
+
+def load(path: Path) -> Fixture:
+    return Fixture.model_validate(yaml.safe_load(path.read_text()))
+
+
+def _host(app: str, folder: FixtureFolder) -> str:
+    if folder.whole_share:
+        return f"/mnt/user/{app}-share"
+    return f"/mnt/user/{APP_SHARE}/{app}" + folder.target.rstrip("/").replace("/", "-")
+
+
+def _template(app: str, image: str, folders: list[FixtureFolder]) -> str:
+    configs = "\n".join(
+        f'  <Config Name="{escape(f.target)}" Target="{escape(f.target)}" Default="" Mode="rw" '
+        f'Type="Path">{escape(_host(app, f))}</Config>'
+        for f in folders
+    )
+    return (
+        '<?xml version="1.0"?>\n<Container version="2">\n'
+        f"  <Name>{escape(app)}</Name>\n  <Repository>{escape(image)}</Repository>\n"
+        f"{configs}\n</Container>\n"
+    )
+
+
+def _make_db(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(path)
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("CREATE TABLE sample (id INTEGER PRIMARY KEY, value TEXT)")
+    con.executemany(
+        "INSERT INTO sample(value) VALUES (?)", [(f"row {i}",) for i in range(SAMPLE_ROWS)]
+    )
+    con.commit()
+    con.close()
+
+
+def _rows(path: Path) -> int:
+    con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        return int(con.execute("SELECT count(*) FROM sample").fetchone()[0])
+    finally:
+        con.close()
+
+
+def _split(item: str, folders: list[FixtureFolder]) -> tuple[FixtureFolder, str] | None:
+    """``/config/a/b.txt`` → (the /config folder, ``a/b.txt``)."""
+    for folder in sorted(folders, key=lambda f: -len(f.target)):
+        prefix = folder.target.rstrip("/") + "/"
+        if item.startswith(prefix):
+            return folder, item[len(prefix) :]
+    return None
+
+
+def _must_split(item: str, folders: list[FixtureFolder]) -> tuple[FixtureFolder, str]:
+    split = _split(item, folders)
+    if split is None:
+        raise ValueError(f"{item} isn't inside one of the fixture's folders")
+    return split
+
+
+def round_trip(manifest: Manifest, fixture: Fixture) -> list[str]:
+    """Back up, wipe and restore the fixture with the plugin; the problems found."""
+    # Imported here: these import the plugin registry, which imports this package.
+    from backuphaven import retention
+    from backuphaven.config import Settings
+    from backuphaven.db import Database, Restore, RunApp
+    from backuphaven.plugins.registry import Registry
+    from backuphaven.restore import Restorer
+    from backuphaven.runner import Runner
+    from backuphaven.unpack import members
+
+    problems: list[str] = []
+    if fixture.plugin != manifest.id:
+        problems.append(f"the fixture is for {fixture.plugin}, not {manifest.id}")
+    from backuphaven.plugins.registry import image_name
+
+    name = image_name(fixture.image)
+    if not any(fnmatch.fnmatchcase(name, p.lower()) for p in manifest.recognise.images):
+        problems.append(f"the plugin doesn't recognise the image {fixture.image}")
+    for item in [*fixture.must_restore, *fixture.must_not_backup]:
+        if _split(item, fixture.folders) is None:
+            problems.append(f"{item} isn't inside one of the fixture's folders")
+    if problems:
+        return problems
+    app = manifest.id
+    with tempfile.TemporaryDirectory(prefix="bh-fixture-") as tmp:
+        base = Path(tmp)
+        templates = base / "templates"
+        templates.mkdir()
+        data_root = base / "mnt-user"
+        (data_root / APP_SHARE).mkdir(parents=True)
+        (templates / f"my-{app}.xml").write_text(_template(app, fixture.image, fixture.folders))
+        roots: dict[str, Path] = {}
+        for folder in fixture.folders:
+            root = data_root / PurePosixPath(_host(app, folder)).relative_to("/mnt/user")
+            root.mkdir(parents=True, exist_ok=True)
+            roots[folder.target] = root
+            for rel, text in folder.files.items():
+                (root / rel).parent.mkdir(parents=True, exist_ok=True)
+                (root / rel).write_text(text)
+            for rel in folder.sqlite:
+                _make_db(root / rel)
+            for rel, target in folder.links.items():
+                (root / rel).parent.mkdir(parents=True, exist_ok=True)
+                (root / rel).symlink_to(target)
+        settings = Settings(
+            config_dir=base / "config",
+            backups_dir=base / "backups",
+            templates_dir=templates,
+            data_root=data_root,
+            min_free_bytes=0,
+        )
+        db = Database(settings.config_dir / "backuphaven.db")
+        db.migrate()
+        with db.write() as session:
+            retention.save_settings(session, retention.KeepingSettings(min_free_gb=0))
+        registry = Registry({app: manifest})
+        runner = Runner(db, settings, registry)
+        run_id = runner.run_now(only=[app], scheduled=True)
+        with db.read() as session:
+            result = session.query(RunApp).filter_by(run_id=run_id).one_or_none()
+        if result is None or result.status != "ok":
+            detail = result.problems if result is not None else "no result"
+            return [f"backup wasn't OK: {result.status if result else '-'} {detail}"]
+        archive = next(settings.backups_dir.glob("backuphaven-*.tar.zst"))
+        stored = {info.name for info, _ in members(archive)}
+
+        def in_backup(item: str) -> bool:
+            split = _must_split(item, fixture.folders)
+            folder, rel = split
+            key = folder.target.strip("/").replace("/", "_") or "root"
+            return any(
+                name in (f"apps/{app}/files/{key}/{rel}", f"apps/{app}/databases/{key}/{rel}")
+                for name in stored
+            )
+
+        for item in fixture.must_not_backup:
+            if in_backup(item):
+                problems.append(f"{item} is in the backup but shouldn't be")
+        for item in fixture.must_restore:
+            if not in_backup(item):
+                problems.append(f"{item} isn't in the backup")
+
+        # A new server: the app's folders are gone (whole shares emptied).
+        originals = {
+            item: (
+                (roots[s[0].target] / s[1]).read_bytes()
+                if (roots[s[0].target] / s[1]).is_file()
+                else None
+            )
+            for item in fixture.must_restore
+            if (s := _split(item, fixture.folders)) is not None
+        }
+        for folder in fixture.folders:
+            root = roots[folder.target]
+            if folder.whole_share:
+                for child in root.iterdir():
+                    shutil.rmtree(
+                        child
+                    ) if child.is_dir() and not child.is_symlink() else child.unlink()
+            else:
+                shutil.rmtree(root)
+        restorer = Restorer(
+            db, settings, registry, runner.lock, quiet_seconds=0, sleep=lambda _s: None
+        )
+        restore_id = restorer.run(run_id, app)
+        with db.read() as session:
+            row = session.get(Restore, restore_id)
+        if row is None or row.status != "done":
+            return [*problems, f"restore failed: {row.error if row else 'no record'}"]
+        for item, before in originals.items():
+            split = _must_split(item, fixture.folders)
+            path = roots[split[0].target] / split[1]
+            if not path.exists() and not path.is_symlink():
+                problems.append(f"{item} wasn't restored")
+            elif split[1] in split[0].sqlite:
+                if _rows(path) != SAMPLE_ROWS:
+                    problems.append(f"{item}: the restored database is incomplete")
+            elif before is not None and path.read_bytes() != before:
+                problems.append(f"{item} came back different")
+        for item in fixture.must_not_backup:
+            split = _must_split(item, fixture.folders)
+            if (roots[split[0].target] / split[1]).exists():
+                problems.append(f"{item} came back after a restore from scratch")
+    return problems

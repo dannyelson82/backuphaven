@@ -1,0 +1,10 @@
+plugin: backuphaven
+image: ghcr.io/dannyelson82/backuphaven:latest
+folders:
+  - target: /config
+    files:
+      secret.key: "example key"
+      logs/backuphaven.log: "log"
+    sqlite: [backuphaven.db]
+must_restore: [/config/backuphaven.db, /config/secret.key]
+must_not_backup: [/config/logs/backuphaven.log]

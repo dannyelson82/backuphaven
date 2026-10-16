@@ -1,0 +1,19 @@
+plugin: radarr
+image: lscr.io/linuxserver/radarr:latest
+folders:
+  - target: /config
+    files:
+      config.xml: "<Config><ApiKey>example</ApiKey><Port>7878</Port></Config>"
+      asp/key-1.xml: "<key>data protection key</key>"
+      logs/radarr.txt: "log line"
+      MediaCover/1/poster.jpg: "image"
+      Backups/scheduled/radarr_backup.zip: "zip"
+      radarr.pid: "123"
+    sqlite: [radarr.db, logs.db]
+must_restore: [/config/config.xml, /config/radarr.db, /config/asp/key-1.xml]
+must_not_backup:
+  - /config/logs/radarr.txt
+  - /config/logs.db
+  - /config/MediaCover/1/poster.jpg
+  - /config/Backups/scheduled/radarr_backup.zip
+  - /config/radarr.pid

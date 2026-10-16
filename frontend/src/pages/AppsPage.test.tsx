@@ -145,4 +145,9 @@ it('shows apps without a plugin and stops them being added', async () => {
   const [mysteryAdd, newAdd] = screen.getAllByRole('button', { name: 'Add to backup schedule' });
   expect(mysteryAdd).toBeDisabled();
   expect(newAdd).toBeEnabled();
+  expect(screen.getByRole('link', { name: 'Make a plugin' })).toHaveAttribute(
+    'href',
+    'api/v1/apps/mystery/plugin-brief',
+  );
+  expect(screen.getByRole('link', { name: 'Plugin file' })).toBeInTheDocument();
 });

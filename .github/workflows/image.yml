@@ -83,6 +83,8 @@ jobs:
           curl -fsS -b "$jar" http://127.0.0.1:7272/api/v1/plugins | tee plugins.json | head -c 300; echo
           for id in sonarr radarr prowlarr plex backuphaven planhaven demo; do grep -q "\"id\":\"$id\"" plugins.json; done
           ! grep -q "\"id\":\"generic\"" plugins.json
+          # The plugin development file includes the authoring guide shipped in the image.
+          curl -fsS -b "$jar" http://127.0.0.1:7272/api/v1/apps/demo/plugin-brief | grep -q "Open a pull request"
           # Nothing is backed up until an app is in the backup schedule (ADR-0011).
           test "$(curl -s -o /dev/null -w '%{http_code}' -b "$jar" -H "X-CSRF-Token: $csrf" \
             -X POST http://127.0.0.1:7272/api/v1/runs)" = 409

@@ -154,6 +154,16 @@ function AppRow({
               Restore…
             </Button>
           )}
+          <Button
+            component="a"
+            href={`api/v1/apps/${encodeURIComponent(app.name)}/plugin-brief`}
+            size="xs"
+            variant={app.plugin === null ? 'light' : 'subtle'}
+            color={app.plugin === null ? 'blue' : 'gray'}
+            title="Download a plugin development file to give to an AI coding assistant"
+          >
+            {app.plugin === null ? 'Make a plugin' : 'Plugin file'}
+          </Button>
         </Stack>
       </Group>
     </Card>

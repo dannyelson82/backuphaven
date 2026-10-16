@@ -56,6 +56,10 @@ class DbCheckView(BaseModel):
     messages: list[str]
     unknown_collations: list[str]
     skipped_tables: list[str] = []
+    seconds: float = 0.0
+    # How the copy was made and where the time went: copy_method, copy_seconds,
+    # check_seconds, wal_bytes.
+    timing: dict[str, Any] = {}
 
 
 class RunDetail(RunView):
@@ -112,6 +116,8 @@ def _db_view(row: DbCheck) -> DbCheckView:
         messages=list(extra.get("messages", [])),
         unknown_collations=list(extra.get("unknown_collations", [])),
         skipped_tables=list(extra.get("skipped_tables", [])),
+        seconds=row.seconds,
+        timing=dict(extra.get("timing", {})),
     )
 
 

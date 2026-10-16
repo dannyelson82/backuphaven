@@ -138,6 +138,9 @@ def test_a_full_run(unraid: Settings, db: Database, tmp_path: Path) -> None:
     con.close()
     assert checks[("Tool", "state.sqlite")].status == "ok"
     assert checks[("sonarr", "sonarr.db")].mode == "full"
+    timing = checks[("sonarr", "sonarr.db")].messages["timing"]  # type: ignore[index]
+    assert timing["copy_method"] in ("live", "immutable")
+    assert timing["copy_seconds"] >= 0 and timing["check_seconds"] >= 0
     manifest = json.loads(files["manifest.json"])
     assert [a["name"] for a in manifest["apps"]] == ["elsewhere", "plex", "sonarr", "Tool"]
 
@@ -212,6 +215,7 @@ def test_run_now_api_and_status(unraid: Settings) -> None:
             {"app": "elsewhere", "target": "/config", "share": "other"}
         ]
         assert {d["app"] for d in state["database_health"]} == {"plex", "sonarr", "Tool"}
+        assert all("copy_seconds" in d["timing"] for d in state["database_health"])
         assert [r["id"] for r in admin.get(f"{API}/runs").json()] == [run_id]
 
 

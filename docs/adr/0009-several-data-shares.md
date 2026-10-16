@@ -1,6 +1,6 @@
 # 0009: Several data shares, each mounted at its host path
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-16
 
 ## Context

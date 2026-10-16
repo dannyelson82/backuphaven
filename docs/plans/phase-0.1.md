@@ -1,6 +1,6 @@
 # Phase 0.1: Foundation and engine
 
-Status: **draft for the owner's approval**.
+Status: **approved by the owner on 2026-10-16**.
 
 Goal: by the end of 0.1, BackupHaven runs on the owner's Unraid server and
 **Run now** produces one verified archive containing Sonarr, Radarr, Prowlarr and
@@ -38,9 +38,7 @@ flash backup (0.7).
   from its template and add both data shares; exact steps will be given.
 - **At release:** press Run now and check the status page.
 
-## Decisions needed before chunk 1
+## Decisions (2026-10-16)
 
-1. Approve ARCHITECTURE.md, SECURITY.md and ADR-0001 to ADR-0009.
-2. Repository public (like ReelHaven) or private until it works.
-3. Default web port 7272 (ReelHaven uses 7171).
-4. A PlanHaven project for BackupHaven notes and bugs: yes or no.
+The owner approved ARCHITECTURE.md, SECURITY.md and ADR-0001 to ADR-0009; a
+public repository; web port 7272; and a PlanHaven project for notes and bugs.

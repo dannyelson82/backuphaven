@@ -1,6 +1,6 @@
 # 0004: Program plugins run locked in, with approved permissions
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-16
 
 ## Context

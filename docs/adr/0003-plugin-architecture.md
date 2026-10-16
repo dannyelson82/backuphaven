@@ -1,6 +1,6 @@
 # 0003: Everything app- or provider-specific is a plugin
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-16
 
 ## Context

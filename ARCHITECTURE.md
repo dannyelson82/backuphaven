@@ -1,6 +1,6 @@
 # BackupHaven Architecture
 
-Status: **draft for the owner's approval**. Decisions are recorded in
+Status: **approved by the owner on 2026-10-16**. Decisions are recorded in
 `docs/adr/`; anything still open is listed in §14.
 
 ## 1. Purpose

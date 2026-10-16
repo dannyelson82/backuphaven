@@ -1,6 +1,6 @@
 # 0005: Stop mode through a limited Docker socket proxy
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-16
 
 ## Context

@@ -1,6 +1,6 @@
 # 0006: Main process runs as root with reduced capabilities
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-16
 
 ## Context

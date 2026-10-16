@@ -1,0 +1,49 @@
+# Local notes about a specific setup (never commit)
+LOCAL_NOTES.md
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Runtime data and backups (never commit real app data)
+/config/
+/backups/
+.dev-config/
+.dev-backups/
+.dev-appdata/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.tar
+*.tar.zst
+*.zst
+*.age
+*.log
+
+# Secrets
+.env
+*.key
+secret*.json
+
+# Editors / OS / tools
+.claude/settings.local.json
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db

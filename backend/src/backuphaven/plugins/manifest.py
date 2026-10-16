@@ -81,6 +81,9 @@ class Backup(FileRules):
     # The app's data folder, as the app's container sees it. "*" = every data folder
     # (the generic plugin).
     folder: Literal["*"] | ContainerPath = "/config"
+    # Container paths mapped to a *whole share* that holds the app's own data (e.g.
+    # PlanHaven's attachments at /data). Whole shares are otherwise never backed up.
+    share_folders: list[ContainerPath] = Field(default_factory=list, max_length=10)
     # SQLite databases to snapshot and check (globs). "auto": find them by their header.
     databases: list[Pattern] | Literal["auto"] = Field(default_factory=list)
     # Files that must exist, or the app's backup fails.

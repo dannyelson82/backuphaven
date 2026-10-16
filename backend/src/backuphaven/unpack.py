@@ -54,6 +54,9 @@ class Part:
 
     prefix: str
     dest: Path
+    # Top-level names in ``dest`` that are left alone and that the archive may not
+    # use (a restore's set-aside folder when ``dest`` is a whole share).
+    reserved: frozenset[str] = frozenset()
 
 
 @dataclass
@@ -179,7 +182,11 @@ def extract(
     for part in parts:
         if not part.prefix.endswith("/"):
             raise ValueError("a prefix ends with /")
-        if not part.dest.is_dir() or part.dest.is_symlink() or any(part.dest.iterdir()):
+        if (
+            not part.dest.is_dir()
+            or part.dest.is_symlink()
+            or any(p.name not in part.reserved for p in part.dest.iterdir())
+        ):
             raise UnpackError(f"{part.dest} must be an existing, empty folder")
     expected = {name for name in records for p in parts if name.startswith(p.prefix)}
     set_owner = os.geteuid() == 0
@@ -191,6 +198,8 @@ def extract(
             if match is None:
                 continue
             rel = safe_relative(info.name[len(match.prefix) :])
+            if rel.parts[0] in match.reserved:
+                raise UnpackError(f"{info.name} uses a reserved name")
             record = records.get(info.name)
             if record is None:
                 raise UnpackError(f"{info.name} isn't in the backup's contents list")

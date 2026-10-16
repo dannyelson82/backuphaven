@@ -81,6 +81,10 @@ def discovered(request: Request, db: DbDep, _principal: InteractiveDep) -> Disco
         scheduled = schedule.load_apps(session)
     in_schedule = {n.lower() for n in scheduled}
     last = _last_backups(db)
+    apps = [
+        discovery.with_plugin_shares(app, known.match(app.image).backup.share_folders)
+        for app in apps
+    ]
     return DiscoveryView(
         data_shares=sorted(discovery.mounted_data_shares(settings.data_root)),
         templates_found=settings.templates_dir.is_dir(),

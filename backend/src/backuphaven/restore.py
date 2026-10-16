@@ -72,6 +72,9 @@ class FolderPlan:
     path: Path  # resolved, checked path inside BackupHaven
     share_root: Path
     in_backup: bool  # the backup holds something for this folder
+    # The folder is a whole share (a plugin's share_folders): its contents are moved
+    # aside one by one, since a share itself can't be renamed.
+    whole_share: bool = False
 
 
 @dataclass
@@ -154,7 +157,8 @@ def plan(db: Database, settings: Settings, registry: Registry, run_id: int, app:
             path = resolve_app_folder(settings.data_root, host)
         except (OutsideShareError, ValueError) as exc:
             raise RestoreError(str(exc)) from None
-        if path == share_root.resolve():
+        whole_share = path == share_root.resolve()
+        if whole_share and str(folder.get("target")) not in _share_folders(registry, record):
             raise RestoreError(f"{host} is a whole share; BackupHaven won't replace it")
         prefixes = (f"apps/{key}/files/{folder['key']}/", f"apps/{key}/databases/{folder['key']}/")
         plans.append(
@@ -165,6 +169,7 @@ def plan(db: Database, settings: Settings, registry: Registry, run_id: int, app:
                 path=path,
                 share_root=share_root,
                 in_backup=any(name.startswith(prefixes) for name in stored),
+                whole_share=whole_share,
             )
         )
     return Plan(
@@ -176,6 +181,11 @@ def plan(db: Database, settings: Settings, registry: Registry, run_id: int, app:
         plugin=registry.plugins.get(str(record.get("plugin")), registry.match("")),
         folders=plans,
     )
+
+
+def _share_folders(registry: Registry, record: dict[str, Any]) -> list[str]:
+    plugin = registry.plugins.get(str(record.get("plugin")))
+    return list(plugin.backup.share_folders) if plugin is not None else []
 
 
 # --- is the app stopped? ------------------------------------------------------------------
@@ -382,18 +392,28 @@ class Restorer:
                     "path": str(folder.path),
                     "aside": None,
                     "moved_back": [],
+                    "whole_share": folder.whole_share,
                 }
                 done.append(record)
                 self._phase("moving the current files aside")
                 old_info = None
-                if folder.path.exists() or folder.path.is_symlink():
+                reserved: frozenset[str] = frozenset()
+                if folder.whole_share:
+                    reserved = frozenset({ASIDE_DIR})
+                    aside.mkdir(parents=True)
+                    record["aside"] = str(aside)
+                    for child in sorted(folder.path.iterdir()):
+                        if child.name != ASIDE_DIR:
+                            child.rename(aside / child.name)
+                elif folder.path.exists() or folder.path.is_symlink():
                     if folder.path.is_symlink() or not folder.path.is_dir():
                         raise RestoreError(f"{folder.host} isn't a plain folder")
                     old_info = folder.path.stat()
                     aside.parent.mkdir(parents=True, exist_ok=True)
                     folder.path.rename(aside)
                     record["aside"] = str(aside)
-                folder.path.mkdir(parents=True)
+                if not folder.whole_share:
+                    folder.path.mkdir(parents=True)
                 if old_info is not None:
                     folder.path.chmod(stat.S_IMODE(old_info.st_mode))
                     if os.geteuid() == 0:
@@ -402,8 +422,10 @@ class Restorer:
                 result = unpack.extract(
                     p.archive,
                     [
-                        unpack.Part(f"apps/{p.app_key}/files/{folder.key}/", folder.path),
-                        unpack.Part(f"apps/{p.app_key}/databases/{folder.key}/", folder.path),
+                        unpack.Part(f"apps/{p.app_key}/files/{folder.key}/", folder.path, reserved),
+                        unpack.Part(
+                            f"apps/{p.app_key}/databases/{folder.key}/", folder.path, reserved
+                        ),
                     ],
                     p.manifest,
                 )
@@ -449,6 +471,23 @@ class Restorer:
         for rel in reversed(record.get("moved_back", [])):
             if aside is not None and ((path / rel).exists() or (path / rel).is_symlink()):
                 _move(path, aside, rel)
+        if record.get("whole_share"):
+            # Empty the share (apart from set-aside folders), then move its old
+            # contents back one by one.
+            for child in path.iterdir():
+                if child.name == ASIDE_DIR:
+                    continue
+                if child.is_dir() and not child.is_symlink():
+                    shutil.rmtree(child)
+                else:
+                    child.unlink()
+            if aside is not None and aside.is_dir():
+                for child in sorted(aside.iterdir()):
+                    child.rename(path / child.name)
+                aside.rmdir()
+                with suppress(OSError):
+                    aside.parent.rmdir()
+            return
         if path.is_dir() and not path.is_symlink():
             shutil.rmtree(path)
         if aside is not None and aside.exists():

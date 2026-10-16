@@ -13,6 +13,7 @@ from backuphaven import audit, discovery, schedule
 from backuphaven.api.deps import DbDep, InteractiveDep, csrf_protect, require_setup_done
 from backuphaven.config import Settings
 from backuphaven.db import DbCheck, Run, RunApp
+from backuphaven.plugins.registry import bundled
 from backuphaven.runner import NoSuchAppsError, Runner
 from backuphaven.scheduler import Scheduler
 
@@ -217,7 +218,11 @@ def get_status(request: Request, db: DbDep, _principal: InteractiveDep) -> Statu
     settings: Settings = request.app.state.settings
     scheduler: Scheduler = request.app.state.scheduler
     progress = _runner(request).progress
-    apps = discovery.discover(settings.templates_dir, settings.data_root)
+    known = bundled()
+    apps = [
+        discovery.with_plugin_shares(app, known.match(app.image).backup.share_folders)
+        for app in discovery.discover(settings.templates_dir, settings.data_root)
+    ]
     with db.read() as session:
         scheduled_apps = schedule.load_apps(session)
         last = session.scalars(

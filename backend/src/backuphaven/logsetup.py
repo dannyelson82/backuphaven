@@ -1,4 +1,4 @@
-"""Structured JSON logging with secret redaction (SECURITY.md, ADR-0011)."""
+"""Structured JSON logging with secret redaction (SECURITY.md, ReelHaven ADR-0011)."""
 
 import json
 import logging
@@ -102,7 +102,7 @@ def configure_logging(level: str, log_dir: Path | None, max_bytes: int, backups:
     root.setLevel(level.upper())
 
     # Uvicorn: propagate to our root handlers; its access log is replaced by
-    # our request middleware (ADR-0011).
+    # our request middleware (ReelHaven ADR-0011).
     for name in ("uvicorn", "uvicorn.error"):
         uv_logger = logging.getLogger(name)
         uv_logger.handlers.clear()

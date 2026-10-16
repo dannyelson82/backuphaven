@@ -8,7 +8,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 logger = logging.getLogger("backuphaven.request")
 
-# Query parameters that carry credentials and must never be logged (ADR-0011).
+# Query parameters that carry credentials and must never be logged (ReelHaven ADR-0011).
 _SENSITIVE_QUERY = frozenset({"apikey", "api_key", "token"})
 
 

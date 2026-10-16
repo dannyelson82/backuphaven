@@ -38,6 +38,6 @@ def test_serves_the_built_frontend(tmp_path: Path) -> None:
     web.mkdir()
     (web / "index.html").write_text("<title>BackupHaven</title>")
     settings = Settings(config_dir=tmp_path / "config", web_dir=web)
-    with TestClient(create_app(settings)) as client:
+    with TestClient(create_app(settings, gateways=frozenset())) as client:
         assert "<title>BackupHaven</title>" in client.get("/").text
         assert client.get("/healthz").json() == {"status": "ok"}  # API still wins

@@ -30,5 +30,6 @@ haven't added yet.
 
 ## Opening it
 
-Open `http://<your server>:7272` in a browser. The early test build shows its
+Open `http://<your server>:7272` in a browser and create the admin account
+(see [Logging in](logging-in.md)). The early test build then shows its
 version and a short note. More pages arrive with each part of version 0.1.

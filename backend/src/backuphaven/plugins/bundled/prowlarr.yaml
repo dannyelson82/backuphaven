@@ -1,0 +1,33 @@
+id: prowlarr
+name: Prowlarr
+version: 1.0.0
+kind: app
+plugin_api: 1
+author: BackupHaven
+description: >-
+  Prowlarr's settings and database. Logs are skipped; Prowlarr's
+  own backup copies are optional.
+recognise:
+  images: ["*/prowlarr", "prowlarr"]
+backup:
+  mode: snapshot
+  folder: /config
+  databases: ["prowlarr.db"]
+  include: ["**"]
+  exclude:
+    - "logs/**"
+    - "logs.db"
+    - "Backups/**"
+    - "Sentry/**"
+    - "*.pid"
+    - "**/*.log"
+  expect: ["config.xml", "prowlarr.db"]
+settings:
+  - id: own_backups
+    label: Include Prowlarr's own backups
+    help: The zip files Prowlarr makes itself in its Backups folder.
+    default: false
+    when_true:
+      include: ["Backups/**"]
+restore:
+  stop_first: true

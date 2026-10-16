@@ -340,6 +340,11 @@ which databases were healthy in each), decide which to delete.
   rename, no copy), so a restore can be
   undone from the UI. Kept for 7 days (configurable).
 - Owners, permissions and times are restored as they were in the archive.
+- What the backup deliberately left out (caches, posters, logs: the plugin's
+  rules) is moved back from the set-aside folder after unpacking, except
+  database side files (`-wal`, `-shm`, `-journal`), which would damage the
+  restored databases (phase 0.3 plan).
+- Backups and restores never run at the same time.
 - Also: download one app's files, or one file, as a separate archive.
 
 ### 6.10 Alerts

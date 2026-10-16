@@ -26,7 +26,7 @@ def _backup(app, admin) -> int:  # type: ignore[no-untyped-def]
     return run_id
 
 
-def test_contents_entries_and_downloads(unraid: Settings) -> None:  # noqa: F811
+def test_contents_entries_and_downloads(unraid: Settings) -> None:
     app = create_app(unraid, gateways=frozenset())
     with TestClient(app):
         admin = admin_client(app)
@@ -68,7 +68,7 @@ def test_contents_entries_and_downloads(unraid: Settings) -> None:  # noqa: F811
         assert 'filename="config.xml"' in one_file.headers["content-disposition"]
 
 
-def test_downloads_refuse_bad_requests(unraid: Settings) -> None:  # noqa: F811
+def test_downloads_refuse_bad_requests(unraid: Settings) -> None:
     app = create_app(unraid, gateways=frozenset())
     with TestClient(app):
         admin = admin_client(app)

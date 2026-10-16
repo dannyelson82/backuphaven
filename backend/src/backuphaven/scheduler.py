@@ -44,7 +44,9 @@ class Scheduler:
         runner: Runner,
         settings: Settings,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        housekeeping: Callable[[], object] | None = None,
     ) -> None:
+        self._housekeeping = housekeeping
         self._db = db
         self._runner = runner
         self._tz = zone(settings.tz)
@@ -73,6 +75,8 @@ class Scheduler:
         while True:
             try:
                 self.tick()
+                if self._housekeeping is not None:
+                    self._housekeeping()
             except Exception:
                 logger.exception("scheduler check failed")
             if self._stop.wait(TICK_S):

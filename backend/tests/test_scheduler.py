@@ -116,7 +116,7 @@ def test_chosen_days_and_time(setup) -> None:  # type: ignore[no-untyped-def]
     assert scheduler.next_run() == datetime(2026, 10, 19, 22, 15, tzinfo=UTC)  # Monday
 
 
-def test_schedule_settings_api(unraid: Settings) -> None:  # noqa: F811
+def test_schedule_settings_api(unraid: Settings) -> None:
     settings = unraid.model_copy(update={"tz": "Europe/London"})
     app = create_app(settings, gateways=frozenset())
     with TestClient(app):

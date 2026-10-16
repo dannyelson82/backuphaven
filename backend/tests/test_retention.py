@@ -14,12 +14,12 @@ def files(folder: Path) -> list[str]:
     return sorted(p.name for p in folder.iterdir() if p.name.endswith(".tar.zst"))
 
 
-def keep(db: Database, **values: float) -> None:  # noqa: F811
+def keep(db: Database, **values: float) -> None:
     with db.write() as session:
         retention.save_settings(session, retention.KeepingSettings.model_validate(values))
 
 
-def test_old_backups_are_deleted_after_a_run(unraid: Settings, db: Database) -> None:  # noqa: F811
+def test_old_backups_are_deleted_after_a_run(unraid: Settings, db: Database) -> None:
     keep(db, nightly=1, weekly=0, monthly=0, min_free_gb=0)
     runner = Runner(db, unraid, bundled())
     first = runner.run_now(only=["Tool"], scheduled=True)
@@ -34,8 +34,8 @@ def test_old_backups_are_deleted_after_a_run(unraid: Settings, db: Database) -> 
 
 
 def test_an_app_taken_out_of_the_schedule_keeps_its_last_good_copy(
-    unraid: Settings,  # noqa: F811
-    db: Database,  # noqa: F811
+    unraid: Settings,
+    db: Database,
 ) -> None:
     keep(db, nightly=1, weekly=0, monthly=0, min_free_gb=0)
     runner = Runner(db, unraid, bundled())
@@ -50,7 +50,7 @@ def test_an_app_taken_out_of_the_schedule_keeps_its_last_good_copy(
     assert "nightly" in reasons[newer]
 
 
-def test_the_owners_minimum_free_space_stops_a_run(unraid: Settings, db: Database) -> None:  # noqa: F811
+def test_the_owners_minimum_free_space_stops_a_run(unraid: Settings, db: Database) -> None:
     keep(db, min_free_gb=100_000)  # 100 TB: more than any test disk
     run_id = Runner(db, unraid, bundled()).run_now(only=["Tool"])
     with db.read() as session:
@@ -74,7 +74,7 @@ def test_only_backuphaven_files_can_be_deleted(tmp_path: Path) -> None:
     assert target.read_text() == "precious"
 
 
-def test_keeping_settings_api(unraid: Settings) -> None:  # noqa: F811
+def test_keeping_settings_api(unraid: Settings) -> None:
     from fastapi.testclient import TestClient
 
     from backuphaven.app import create_app

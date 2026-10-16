@@ -18,7 +18,7 @@ def _wait(app) -> None:  # type: ignore[no-untyped-def]
         time.sleep(0.05)
 
 
-def test_list_and_delete_backups(unraid: Settings) -> None:  # noqa: F811
+def test_list_and_delete_backups(unraid: Settings) -> None:
     app = create_app(unraid, gateways=frozenset())
     with TestClient(app):
         admin = admin_client(app)

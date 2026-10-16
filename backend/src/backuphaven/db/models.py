@@ -105,6 +105,26 @@ class Run(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(default=None)
 
 
+class Restore(Base):
+    """One app restored from one backup (ARCHITECTURE.md §6.9), and its undo."""
+
+    __tablename__ = "restores"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[int] = mapped_column(Integer, index=True)  # the backup restored from
+    app: Mapped[str] = mapped_column(String(255))
+    # running | done | failed | undone | expired
+    status: Mapped[str] = mapped_column(String(16))
+    started_at: Mapped[datetime] = mapped_column(default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(default=None)
+    # Until when Undo is possible (the set-aside folders are kept until then).
+    undo_until: Mapped[datetime | None] = mapped_column(default=None)
+    error: Mapped[str | None] = mapped_column(Text, default=None)
+    # Per folder: host path, set-aside path, what was moved back, counts.
+    detail: Mapped[dict[str, Any] | None] = mapped_column(default=None)
+    actor: Mapped[str] = mapped_column(String(128), default="")
+
+
 class RunApp(Base):
     """One app's part of a run."""
 

@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     # Diagnostics files (Settings → Developer); None: /diagnostics if mapped,
     # otherwise <config>/diagnostics.
     diagnostics_dir: Path | None = None
+    # How long a restore watches an app's files to see they've stopped changing.
+    restore_quiet_s: float = Field(default=5.0, ge=0, le=60)
     # Time zone for the nightly schedule (Unraid passes TZ to every container).
     tz: str = Field(default="Etc/UTC", validation_alias="TZ")
 

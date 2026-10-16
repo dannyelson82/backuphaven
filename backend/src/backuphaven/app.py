@@ -6,16 +6,27 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from sqlalchemy import select
 
 from backuphaven import __version__
-from backuphaven.api import app_routes, auth_routes, security_routes
+from backuphaven.api import app_routes, auth_routes, run_routes, security_routes
 from backuphaven.auth.network import IPAddress, read_default_gateways
 from backuphaven.auth.throttle import LoginThrottle
 from backuphaven.config import Settings, get_settings
-from backuphaven.db import Database
+from backuphaven.db import Database, Run
+from backuphaven.db.types import utcnow
 from backuphaven.headers import SecurityHeadersMiddleware
 from backuphaven.middleware import RequestLogMiddleware
+from backuphaven.plugins.registry import bundled
+from backuphaven.runner import Runner
 from backuphaven.secretbox import SecretBox
+
+
+def mark_interrupted_runs(db: Database) -> None:
+    """A run still "running" at start-up was cut off by a restart."""
+    with db.write() as session:
+        for run in session.scalars(select(Run).where(Run.status == "running")):
+            run.status, run.error, run.finished_at = "failed", "interrupted by a restart", utcnow()
 
 
 class Health(BaseModel):
@@ -42,6 +53,7 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         db.migrate()
+        mark_interrupted_runs(db)
         yield
         db.close()
 
@@ -59,6 +71,7 @@ def create_app(
     app.state.throttle = LoginThrottle()
     app.state.gateways = read_default_gateways() if gateways is None else gateways
     app.state.gateway_seen_at = None
+    app.state.runner = Runner(db, settings, bundled())
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestLogMiddleware)
 
@@ -70,7 +83,7 @@ def create_app(
     def version() -> Version:
         return Version(name="BackupHaven", version=__version__)
 
-    for module in (auth_routes, security_routes, app_routes):
+    for module in (auth_routes, security_routes, app_routes, run_routes):
         app.include_router(module.router, prefix="/api/v1")
 
     web_dir = settings.web_dir

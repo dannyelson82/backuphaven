@@ -6,7 +6,7 @@ pure; ``discover`` reads the template folder.
 """
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
 import defusedxml.ElementTree as SafeET
@@ -60,7 +60,7 @@ class App:
     image: str
     folders: tuple[DataFolder, ...] = ()
     missing: tuple[MissingShare, ...] = ()
-    warnings: tuple[str, ...] = field(default=())
+    template_file: str | None = None  # where the template was read from
 
 
 class TemplateError(ValueError):
@@ -168,5 +168,5 @@ def discover(templates_dir: Path, data_root: Path) -> list[App]:
         except (OSError, TemplateError) as exc:
             logger.warning("template skipped", extra={"file": path.name, "reason": str(exc)})
             continue
-        apps.append(discover_app(template, shares))
+        apps.append(replace(discover_app(template, shares), template_file=str(path)))
     return sorted(apps, key=lambda app: app.name.lower())

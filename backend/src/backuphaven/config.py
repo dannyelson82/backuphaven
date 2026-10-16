@@ -15,7 +15,9 @@ LogLevel = Literal["debug", "info", "warning", "error"]
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="BACKUPHAVEN_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="BACKUPHAVEN_", extra="ignore", populate_by_name=True
+    )
 
     # The container sets BACKUPHAVEN_CONFIG_DIR=/config. The development default
     # is deliberately a local folder: in code-server, /config is the home dir.
@@ -29,6 +31,11 @@ class Settings(BaseSettings):
     data_root: Path = Path("/mnt/user")
     # Address of the optional socket proxy (ADR-0005); None: stop mode unavailable.
     docker_proxy: str | None = None
+    # Owner of the files BackupHaven creates (Unraid's PUID/PGID, no prefix).
+    puid: int = Field(default=99, ge=0, validation_alias="PUID")
+    pgid: int = Field(default=100, ge=0, validation_alias="PGID")
+    # A run doesn't start, and stops, when the backups disk has less free space.
+    min_free_bytes: int = Field(default=2 << 30, ge=0)
     host: str = "0.0.0.0"  # noqa: S104 - a container must listen on all interfaces
     port: int = Field(default=7272, ge=1, le=65535)
     log_level: LogLevel = "info"

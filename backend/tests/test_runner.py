@@ -1,0 +1,231 @@
+"""Whole backup runs against a fake Unraid (ARCHITECTURE.md §3, §6.5)."""
+
+import json
+import sqlite3
+import tarfile
+import time
+from pathlib import Path
+
+import pytest
+import zstandard
+from fastapi.testclient import TestClient
+
+from backuphaven.app import create_app
+from backuphaven.config import Settings
+from backuphaven.db import Database, DbCheck, Run, RunApp
+from backuphaven.plugins.registry import bundled
+from backuphaven.runner import Runner
+from tests.helpers import API, admin_client
+from tests.test_discovery import template_xml
+
+
+def make_db(path: Path, rows: int = 50, keep_open: bool = False) -> sqlite3.Connection | None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(path)
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("CREATE TABLE t (x)")
+    con.executemany("INSERT INTO t VALUES (?)", [(i,) for i in range(rows)])
+    con.commit()
+    if keep_open:
+        return con
+    con.close()
+    return None
+
+
+def write(path: Path, text: str = "x") -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+
+
+@pytest.fixture
+def unraid(tmp_path: Path) -> Settings:
+    """Templates on the flash drive and two data shares, like the owner's server."""
+    templates = tmp_path / "boot" / "templates-user"
+    templates.mkdir(parents=True)
+    root = tmp_path / "mnt-user"
+    (templates / "my-sonarr.xml").write_text(
+        template_xml(
+            "sonarr",
+            "lscr.io/linuxserver/sonarr",
+            ("/config", "/mnt/cache/fast/sonarr", "rw"),
+            ("/tv", "/mnt/user/media/tv", "rw"),
+        )
+    )
+    (templates / "my-plex.xml").write_text(
+        template_xml(
+            "plex", "lscr.io/linuxserver/plex", ("/config", "/mnt/user/appdata/plex", "rw")
+        )
+    )
+    (templates / "my-tool.xml").write_text(
+        template_xml("Tool", "someone/tool", ("/data/config", "/mnt/user/appdata/tool", "rw"))
+    )
+    (templates / "my-elsewhere.xml").write_text(
+        template_xml("elsewhere", "someone/x", ("/config", "/mnt/user/other/x", "rw"))
+    )
+    sonarr = root / "fast" / "sonarr"
+    write(sonarr / "config.xml", "<Config><ApiKey>abc</ApiKey></Config>")
+    make_db(sonarr / "sonarr.db")
+    write(sonarr / "logs" / "sonarr.txt", "log")
+    pms = root / "appdata" / "plex" / "Library" / "Application Support" / "Plex Media Server"
+    write(pms / "Preferences.xml", "<Preferences/>")
+    make_db(pms / "Plug-in Support" / "Databases" / "com.plexapp.plugins.library.db", rows=500)
+    write(pms / "Cache" / "huge.bin", "cache")
+    make_db(root / "appdata" / "tool" / "state.sqlite")
+    write(root / "appdata" / "tool" / "settings.json", "{}")
+    (root / "media" / "tv").mkdir(parents=True)
+    return Settings(
+        config_dir=tmp_path / "config",
+        backups_dir=tmp_path / "backups",
+        templates_dir=templates,
+        data_root=root,
+        min_free_bytes=0,
+    )
+
+
+@pytest.fixture
+def db(unraid: Settings) -> Database:
+    database = Database(unraid.config_dir / "backuphaven.db")
+    database.migrate()
+    return database
+
+
+def contents(archive: Path) -> dict[str, bytes]:
+    out: dict[str, bytes] = {}
+    with archive.open("rb") as handle:
+        reader = zstandard.ZstdDecompressor().stream_reader(handle)
+        with tarfile.open(fileobj=reader, mode="r|") as tar:
+            for info in tar:
+                data = tar.extractfile(info)
+                out[info.name] = data.read() if data else b""
+    return out
+
+
+def test_a_full_run(unraid: Settings, db: Database, tmp_path: Path) -> None:
+    run_id = Runner(db, unraid, bundled()).run_now()
+    with db.read() as session:
+        run = session.get(Run, run_id)
+        apps = {a.app: a for a in session.query(RunApp).filter_by(run_id=run_id)}
+        checks = {(c.app, c.path): c for c in session.query(DbCheck).filter_by(run_id=run_id)}
+    assert run is not None and run.verified and run.archive
+    # The app on a share BackupHaven can't see makes the run a warning, not a failure.
+    assert run.status == "warning"
+    assert apps["elsewhere"].status == "warning"
+    assert "'other' share" in apps["elsewhere"].problems["warnings"][0]  # type: ignore[index]
+    assert {apps[n].status for n in ("sonarr", "plex", "Tool")} == {"ok"}
+    assert {apps[n].plugin for n in ("sonarr", "plex", "Tool")} == {"sonarr", "plex", "generic"}
+
+    archive = unraid.backups_dir / run.archive
+    assert oct(archive.stat().st_mode & 0o777) == "0o600"
+    leftovers = [p.name for p in unraid.backups_dir.iterdir()]
+    assert sorted(leftovers) == sorted([archive.name, archive.name + ".manifest.json"])
+
+    files = contents(archive)
+    assert files["apps/sonarr/files/config/config.xml"].startswith(b"<Config>")
+    assert "apps/sonarr/files/config/logs/sonarr.txt" not in files
+    assert "apps/sonarr/template.xml" in files
+    plex = "apps/plex/files/config/Library/Application Support/Plex Media Server"
+    assert f"{plex}/Preferences.xml" in files and f"{plex}/Cache/huge.bin" not in files
+    assert "apps/Tool/files/data_config/settings.json" in files
+    db_copy = tmp_path / "restored.db"
+    db_copy.write_bytes(
+        files[
+            "apps/plex/databases/config/Library/Application Support/Plex Media Server/"
+            "Plug-in Support/Databases/com.plexapp.plugins.library.db"
+        ]
+    )
+    con = sqlite3.connect(db_copy)
+    assert con.execute("SELECT count(*) FROM t").fetchone()[0] == 500
+    con.close()
+    assert checks[("Tool", "state.sqlite")].status == "ok"
+    assert checks[("sonarr", "sonarr.db")].mode == "full"
+    manifest = json.loads(files["manifest.json"])
+    assert [a["name"] for a in manifest["apps"]] == ["elsewhere", "plex", "sonarr", "Tool"]
+
+
+def test_a_running_apps_latest_changes_are_included(unraid: Settings, db: Database) -> None:
+    sonarr_db = unraid.data_root / "fast" / "sonarr" / "sonarr.db"
+    sonarr_db.unlink()
+    con = make_db(sonarr_db, rows=10, keep_open=True)
+    assert con is not None
+    con.execute("PRAGMA wal_autocheckpoint=0")
+    con.execute("INSERT INTO t VALUES ('newest')")
+    con.commit()
+    try:
+        run_id = Runner(db, unraid, bundled()).run_now()
+    finally:
+        con.close()
+    with db.read() as session:
+        check = session.query(DbCheck).filter_by(run_id=run_id, app="sonarr").one()
+    assert check.status == "ok"
+
+
+def test_a_damaged_database_fails_its_app_but_keeps_the_archive(
+    unraid: Settings, db: Database
+) -> None:
+    broken = unraid.data_root / "appdata" / "tool" / "state.sqlite"
+    con = sqlite3.connect(broken)
+    con.execute("PRAGMA journal_mode=DELETE")
+    con.executemany("INSERT INTO t VALUES (?)", [(i,) for i in range(5000)])
+    con.execute("CREATE INDEX t_x ON t(x)")
+    con.commit()
+    con.close()
+    data = bytearray(broken.read_bytes())
+    data[4096 * 3 : 4096 * 3 + 100] = b"\xff" * 100
+    broken.write_bytes(bytes(data))
+    run_id = Runner(db, unraid, bundled()).run_now()
+    with db.read() as session:
+        run = session.get(Run, run_id)
+        tool = session.query(RunApp).filter_by(run_id=run_id, app="Tool").one()
+        check = session.query(DbCheck).filter_by(run_id=run_id, app="Tool").one()
+    assert run is not None and run.status == "failed" and run.verified and run.archive
+    assert tool.status == "failed"
+    assert check.status == "damaged"
+
+
+def test_low_disk_space_stops_before_writing(unraid: Settings, db: Database) -> None:
+    settings = unraid.model_copy(update={"min_free_bytes": 1 << 60})
+    run_id = Runner(db, settings, bundled()).run_now()
+    with db.read() as session:
+        run = session.get(Run, run_id)
+    assert run is not None and run.status == "failed" and run.archive is None
+    assert "free space" in (run.error or "")
+    assert list(settings.backups_dir.iterdir()) == []
+
+
+def test_run_now_api_and_status(unraid: Settings) -> None:
+    app = create_app(unraid, gateways=frozenset())
+    with TestClient(app):
+        admin = admin_client(app)
+        assert admin.get(f"{API}/status").json()["last_run"] is None
+        run_id = admin.post(f"{API}/runs").json()["run_id"]
+        for _ in range(200):
+            if not app.state.runner.running:
+                break
+            time.sleep(0.05)
+        detail = admin.get(f"{API}/runs/{run_id}").json()
+        assert detail["status"] == "warning" and detail["verified"]
+        assert {a["app"] for a in detail["apps"]} == {"elsewhere", "plex", "sonarr", "Tool"}
+        state = admin.get(f"{API}/status").json()
+        assert state["last_good_run"]["id"] == run_id
+        assert state["data_shares"] == ["appdata", "fast", "media"]
+        assert state["missing_shares"] == [
+            {"app": "elsewhere", "target": "/config", "share": "other"}
+        ]
+        assert {d["app"] for d in state["database_health"]} == {"plex", "sonarr", "Tool"}
+        assert [r["id"] for r in admin.get(f"{API}/runs").json()] == [run_id]
+
+
+def test_only_one_run_at_a_time(unraid: Settings, db: Database) -> None:
+    runner = Runner(db, unraid, bundled())
+    with runner._lock:  # as if a run were going
+        assert runner.start("manual") is None
+
+
+def test_runs_cut_off_by_a_restart_are_marked_failed(unraid: Settings, db: Database) -> None:
+    with db.write() as session:
+        session.add(Run(trigger="manual", status="running"))
+    with TestClient(create_app(unraid, gateways=frozenset())):
+        pass
+    with db.read() as session:
+        run = session.query(Run).one()
+    assert run.status == "failed" and run.error == "interrupted by a restart"

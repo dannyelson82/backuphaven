@@ -2,15 +2,13 @@
   <rect width="512" height="512" rx="112" ry="112" fill="#5b21b6"/>
   <!-- roof (Haven family) -->
   <polyline points="96,200 256,84 416,200" fill="none" stroke="#ffffff" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
-  <g transform="translate(-22,0)">
-  <!-- database -->
-  <rect x="146" y="232" width="220" height="168" fill="#ffffff"/>
-  <ellipse cx="256" cy="400" rx="110" ry="34" fill="#ffffff"/>
-  <ellipse cx="256" cy="232" rx="110" ry="34" fill="#e2e8f0"/>
-  <path d="M146,288 A110,34 0 0 0 366,288" fill="none" stroke="#5b21b6" stroke-width="10"/>
-  <path d="M146,344 A110,34 0 0 0 366,344" fill="none" stroke="#5b21b6" stroke-width="10"/>
-  </g>
-  <!-- verified badge -->
-  <circle cx="380" cy="384" r="74" fill="#5eead4" stroke="#5b21b6" stroke-width="14"/>
-  <polyline points="344,386 370,412 418,358" fill="none" stroke="#134e6f" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- database, centred under the roof's peak -->
+  <rect x="156" y="232" width="200" height="168" fill="#ffffff"/>
+  <ellipse cx="256" cy="400" rx="100" ry="32" fill="#ffffff"/>
+  <ellipse cx="256" cy="232" rx="100" ry="32" fill="#e2e8f0"/>
+  <path d="M156,288 A100,32 0 0 0 356,288" fill="none" stroke="#5b21b6" stroke-width="10"/>
+  <path d="M156,344 A100,32 0 0 0 356,344" fill="none" stroke="#5b21b6" stroke-width="10"/>
+  <!-- verified badge, tucked onto the database's corner -->
+  <circle cx="352" cy="394" r="60" fill="#5eead4" stroke="#5b21b6" stroke-width="12"/>
+  <polyline points="323,396 344,417 383,373" fill="none" stroke="#134e6f" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

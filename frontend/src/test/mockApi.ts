@@ -39,3 +39,15 @@ export const state = (overrides: Record<string, unknown> = {}) => ({
     ...overrides,
   },
 });
+
+export const EMPTY_STATUS = {
+  running: null,
+  last_run: null,
+  last_good_run: null,
+  apps: 0,
+  data_shares: [],
+  templates_found: true,
+  missing_shares: [],
+  backups_free_bytes: 100_000_000_000,
+  database_health: [],
+};

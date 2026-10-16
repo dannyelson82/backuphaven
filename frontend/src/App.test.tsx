@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from './App';
-import { mockApi, state } from './test/mockApi';
+import { EMPTY_STATUS, mockApi, state } from './test/mockApi';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -36,14 +36,14 @@ describe('first run', () => {
         created = true;
         return { status: 201, body: {} };
       },
-      'GET version': { body: { name: 'BackupHaven', version: '0.0.1' } },
+      'GET status': { body: EMPTY_STATUS },
     });
     render(<App />);
     await userEvent.type(await screen.findByLabelText('Password'), 'long enough password');
     await userEvent.type(screen.getByLabelText('Confirm password'), 'long enough password');
     await userEvent.click(screen.getByRole('button', { name: 'Create account' }));
-    expect(await screen.findByText('Logged in as admin')).toBeInTheDocument();
-    expect(await screen.findByText('Version 0.0.1')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Run now' })).toBeInTheDocument();
+    expect(screen.getByText('No backups yet.')).toBeInTheDocument();
     const post = calls.find((c) => c.key === 'POST setup');
     expect(new Headers(post?.init?.headers).get('X-CSRF-Token')).toBe('csrf-123');
   });
@@ -63,7 +63,7 @@ it('logs out', async () => {
   const calls = mockApi({
     'GET auth/state': () =>
       loggedIn ? state({ authenticated: true, username: 'admin', method: 'session' }) : state(),
-    'GET version': { body: { name: 'BackupHaven', version: '0.0.1' } },
+    'GET status': { body: EMPTY_STATUS },
     'POST auth/logout': () => {
       loggedIn = false;
       return { status: 204 };

@@ -85,6 +85,8 @@ export function errorMessage(error: unknown): string {
       return 'Your page is out of date. Reload and try again.';
     case 'not_authenticated':
       return 'Please log in again.';
+    case 'run_in_progress':
+      return 'A backup is already running.';
     case 'validation_error':
       return 'Some of the values are not valid.';
     default:

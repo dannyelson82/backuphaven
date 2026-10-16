@@ -137,6 +137,11 @@ def plan(db: Database, settings: Settings, registry: Registry, run_id: int, app:
     key = str(record.get("key") or "")
     if not key or record.get("status") == "skipped":
         raise RestoreError(f"{app} has nothing in this backup")
+    plugin = registry.get(str(record.get("plugin")))
+    if plugin is None:
+        raise RestoreError(
+            f"the {record.get('plugin')} plugin that made this backup isn't installed"
+        )
     folders = record.get("folders") or _folders_from_template(archive, manifest, key, settings)
     if not folders:
         raise RestoreError(f"the backup doesn't say where {app}'s folders go")
@@ -178,7 +183,7 @@ def plan(db: Database, settings: Settings, registry: Registry, run_id: int, app:
         manifest=manifest,
         app=str(record["name"]),
         app_key=key,
-        plugin=registry.plugins.get(str(record.get("plugin")), registry.match("")),
+        plugin=plugin,
         folders=plans,
     )
 

@@ -1,0 +1,12 @@
+plugin: prowlarr
+image: lscr.io/linuxserver/prowlarr:latest
+folders:
+  - target: /config
+    files:
+      config.xml: "<Config><ApiKey>example</ApiKey></Config>"
+      Definitions/Custom/myindexer.yml: "id: myindexer"
+      logs/prowlarr.txt: "log line"
+      Backups/scheduled/prowlarr_backup.zip: "zip"
+    sqlite: [prowlarr.db, logs.db]
+must_restore: [/config/config.xml, /config/prowlarr.db, /config/Definitions/Custom/myindexer.yml]
+must_not_backup: [/config/logs/prowlarr.txt, /config/logs.db, /config/Backups/scheduled/prowlarr_backup.zip]

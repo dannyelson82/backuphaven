@@ -1,0 +1,19 @@
+plugin: sonarr
+image: lscr.io/linuxserver/sonarr:latest
+folders:
+  - target: /config
+    files:
+      config.xml: "<Config><ApiKey>example</ApiKey><Port>8989</Port></Config>"
+      asp/key-1.xml: "<key>data protection key</key>"
+      logs/sonarr.txt: "log line"
+      MediaCover/1/poster.jpg: "image"
+      Backups/scheduled/sonarr_backup.zip: "zip"
+      sonarr.pid: "123"
+    sqlite: [sonarr.db, logs.db]
+must_restore: [/config/config.xml, /config/sonarr.db, /config/asp/key-1.xml]
+must_not_backup:
+  - /config/logs/sonarr.txt
+  - /config/logs.db
+  - /config/MediaCover/1/poster.jpg
+  - /config/Backups/scheduled/sonarr_backup.zip
+  - /config/sonarr.pid

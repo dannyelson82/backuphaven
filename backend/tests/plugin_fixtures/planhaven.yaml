@@ -1,0 +1,19 @@
+plugin: planhaven
+image: ghcr.io/dannyelson82/planhaven:latest
+folders:
+  - target: /config
+    files:
+      secrets/app.key: "example secret"
+      backups/planhaven-20261016-030000.dump: "PGDMP example dump"
+      pgdata/PG_VERSION: "18"
+      pgdata/global/pg_control: "live cluster"
+      logs/app.log: "log"
+  - target: /data
+    whole_share: true
+    files:
+      attachments/a1/receipt.pdf: "pdf"
+must_restore:
+  - /config/secrets/app.key
+  - /config/backups/planhaven-20261016-030000.dump
+  - /data/attachments/a1/receipt.pdf
+must_not_backup: [/config/pgdata/PG_VERSION, /config/logs/app.log]

@@ -14,7 +14,7 @@ from backuphaven.app import create_app
 from backuphaven.config import Settings
 from backuphaven.db import Database, DbCheck, Run, RunApp
 from backuphaven.plugins.registry import bundled
-from backuphaven.runner import Runner
+from backuphaven.runner import NoSuchAppsError, Runner, remove_leftovers
 from tests.helpers import API, admin_client
 from tests.test_discovery import template_xml
 
@@ -229,3 +229,79 @@ def test_runs_cut_off_by_a_restart_are_marked_failed(unraid: Settings, db: Datab
     with db.read() as session:
         run = session.query(Run).one()
     assert run.status == "failed" and run.error == "interrupted by a restart"
+
+
+def test_run_now_for_chosen_apps_only(unraid: Settings, db: Database) -> None:
+    run_id = Runner(db, unraid, bundled()).run_now(only=["Sonarr", "Tool"])
+    with db.read() as session:
+        run = session.get(Run, run_id)
+        apps = [a.app for a in session.query(RunApp).filter_by(run_id=run_id)]
+    assert run is not None and run.status == "ok" and run.verified and run.archive
+    assert sorted(apps) == ["Tool", "sonarr"]
+    assert run.summary is not None and run.summary["only"] == ["Sonarr", "Tool"]
+    files = contents(unraid.backups_dir / run.archive)
+    assert not any(name.startswith("apps/plex/") for name in files)
+    assert json.loads(files["manifest.json"])["only"] == ["Sonarr", "Tool"]
+
+
+def test_run_now_rejects_apps_that_arent_there(unraid: Settings, db: Database) -> None:
+    runner = Runner(db, unraid, bundled())
+    with pytest.raises(NoSuchAppsError, match="nothere"):
+        runner.run_now(only=["sonarr", "nothere"])
+    with pytest.raises(NoSuchAppsError):
+        runner.run_now(only=[])
+    assert not runner.running
+    with db.read() as session:
+        assert session.query(Run).count() == 0
+
+
+class _CancelDuringFirstApp(Runner):
+    def _backup_app(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        self.cancel()  # as if Cancel were pressed while this app is being read
+        return super()._backup_app(*args, **kwargs)
+
+
+def test_cancel_stops_the_run_and_leaves_nothing_behind(unraid: Settings, db: Database) -> None:
+    runner = _CancelDuringFirstApp(db, unraid, bundled())
+    run_id = runner.run_now()
+    with db.read() as session:
+        run = session.get(Run, run_id)
+    assert run is not None and run.status == "cancelled"
+    assert run.archive is None and run.error is None and not run.verified
+    assert list(unraid.backups_dir.iterdir()) == []
+    assert not runner.cancel()  # nothing running any more
+    # The next run isn't cancelled by the old request.
+    assert Runner.run_now(runner, only=["Tool"]) != run_id
+
+
+def test_run_api_choose_apps_and_cancel(unraid: Settings) -> None:
+    app = create_app(unraid, gateways=frozenset())
+    with TestClient(app):
+        admin = admin_client(app)
+        bad = admin.post(f"{API}/runs", json={"apps": ["nothere"]})
+        assert bad.status_code == 422 and "nothere" in bad.json()["detail"]
+        assert admin.post(f"{API}/runs/cancel").status_code == 409
+        run_id = admin.post(f"{API}/runs", json={"apps": ["plex"]}).json()["run_id"]
+        for _ in range(200):
+            if not app.state.runner.running:
+                break
+            time.sleep(0.05)
+        detail = admin.get(f"{API}/runs/{run_id}").json()
+        assert [a["app"] for a in detail["apps"]] == ["plex"]
+        assert detail["summary"]["only"] == ["plex"]
+
+
+def test_leftovers_of_an_interrupted_run_are_removed_at_start(unraid: Settings) -> None:
+    backups = unraid.backups_dir
+    (backups / ".work" / "7").mkdir(parents=True)
+    (backups / ".work" / "7" / "plex-0.db").write_text("snapshot")
+    (backups / "backuphaven-2026-10-16T190000.tar.zst.partial").write_text("half")
+    (backups / "backuphaven-2026-10-15T020000.tar.zst").write_text("a good backup")
+    (backups / "my-notes.partial").write_text("not ours")
+    with TestClient(create_app(unraid, gateways=frozenset())):
+        pass
+    assert sorted(p.name for p in backups.iterdir()) == [
+        "backuphaven-2026-10-15T020000.tar.zst",
+        "my-notes.partial",
+    ]
+    assert remove_leftovers(backups) == []

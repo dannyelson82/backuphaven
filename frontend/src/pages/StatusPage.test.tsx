@@ -125,6 +125,113 @@ it('starts a backup and shows its progress', async () => {
   expect(calls.some((c) => c.key === 'POST runs')).toBe(true);
 });
 
+const RUNNING = {
+  run_id: 2,
+  seconds: 30,
+  app: 'plex',
+  apps_done: 0,
+  apps_total: 2,
+  files: 10,
+  bytes: 1_000_000,
+  phase: 'backing up',
+};
+
+it('backs up only the apps chosen', async () => {
+  let started = false;
+  const calls = mockApi({
+    'GET auth/state': LOGGED_IN,
+    'GET status': () => ({
+      body: started ? { ...EMPTY_STATUS, running: RUNNING } : { ...EMPTY_STATUS, apps: 3 },
+    }),
+    'GET apps/discovered': {
+      body: {
+        data_shares: ['appdata'],
+        templates_found: true,
+        apps: [
+          {
+            name: 'plex',
+            image: 'p',
+            plugin: 'plex',
+            folders: [{ target: '/config', host: '/mnt/user/appdata/plex', share: 'appdata' }],
+            missing: [],
+          },
+          {
+            name: 'sonarr',
+            image: 's',
+            plugin: 'sonarr',
+            folders: [{ target: '/config', host: '/mnt/user/appdata/sonarr', share: 'appdata' }],
+            missing: [],
+          },
+          {
+            name: 'radarr',
+            image: 'r',
+            plugin: 'radarr',
+            folders: [],
+            missing: [{ target: '/config', host: '/mnt/user/other/radarr', share: 'other' }],
+          },
+        ],
+      },
+    },
+    'POST runs': () => {
+      started = true;
+      return { status: 202, body: { run_id: 2 } };
+    },
+  });
+  render(<App />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Choose apps…' }));
+  expect(await screen.findByText(/on the other share/)).toBeInTheDocument();
+  const start = screen.getByRole('button', { name: 'Back up 0 apps' });
+  expect(start).toBeDisabled();
+  await userEvent.click(screen.getByRole('checkbox', { name: 'plex' }));
+  await userEvent.click(screen.getByRole('checkbox', { name: 'sonarr' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Back up 2 apps' }));
+  expect(await screen.findByText('Backing up plex')).toBeInTheDocument();
+  const post = calls.find((c) => c.key === 'POST runs');
+  expect(JSON.parse(String(post?.init?.body))).toEqual({ apps: ['plex', 'sonarr'] });
+});
+
+it('cancels a running backup', async () => {
+  let cancelled = false;
+  const calls = mockApi({
+    'GET auth/state': LOGGED_IN,
+    'GET status': () => ({
+      body: { ...EMPTY_STATUS, running: cancelled ? { ...RUNNING, phase: 'cancelling' } : RUNNING },
+    }),
+    'POST runs/cancel': () => {
+      cancelled = true;
+      return { status: 202, body: { cancelling: true } };
+    },
+  });
+  render(<App />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+  expect(await screen.findByText('Cancelling…')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+  expect(calls.some((c) => c.key === 'POST runs/cancel')).toBe(true);
+});
+
+it('shows a cancelled backup and a backup of chosen apps', async () => {
+  mockApi({
+    'GET auth/state': LOGGED_IN,
+    'GET status': {
+      body: {
+        ...EMPTY_STATUS,
+        last_run: {
+          ...RUN,
+          status: 'cancelled',
+          archive: null,
+          size: null,
+          verified: false,
+          summary: { ...RUN.summary, only: ['plex'] },
+        },
+      },
+    },
+    'GET runs/7': { body: { ...RUN, apps: [], databases: [] } },
+  });
+  render(<App />);
+  expect(await screen.findByText('Cancelled')).toBeInTheDocument();
+  expect(screen.getByText('Chosen apps only: plex')).toBeInTheDocument();
+});
+
 it('says when the container list is missing and when a backup failed', async () => {
   mockApi({
     'GET auth/state': LOGGED_IN,

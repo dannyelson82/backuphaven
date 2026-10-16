@@ -3,19 +3,23 @@ import {
   Badge,
   Button,
   Card,
+  Checkbox,
   Code,
   Container,
   Group,
   Image,
   List,
   Loader,
+  Modal,
   Progress as Bar,
+  ScrollArea,
   SimpleGrid,
   Stack,
   Table,
   Text,
   Title,
 } from '@mantine/core';
+import { useState } from 'react';
 import { type AuthState, useLogout } from '../api/auth';
 import { errorMessage } from '../api/client';
 import {
@@ -23,6 +27,8 @@ import {
   type Progress,
   type RunApp,
   type RunStatus,
+  useCancelRun,
+  useDiscoveredApps,
   useRun,
   useRunNow,
   useStatus,
@@ -34,6 +40,7 @@ const STATUS: Record<RunStatus, { color: string; label: string }> = {
   ok: { color: 'green', label: 'OK' },
   warning: { color: 'yellow', label: 'Warnings' },
   failed: { color: 'red', label: 'Failed' },
+  cancelled: { color: 'gray', label: 'Cancelled' },
 };
 
 const DB_STATUS: Record<DbCheck['status'], { color: string; label: string }> = {
@@ -48,24 +55,99 @@ function StatusBadge({ status }: { status: RunStatus }) {
 }
 
 function Running({ progress }: { progress: Progress }) {
+  const cancel = useCancelRun();
   const percent = progress.apps_total ? (progress.apps_done / progress.apps_total) * 100 : 0;
+  const cancelling = progress.phase === 'cancelling' || cancel.isSuccess;
   return (
     <Stack gap="xs">
       <Group justify="space-between">
         <Text fw={500}>
-          {progress.phase === 'verifying'
-            ? 'Checking the backup file…'
-            : progress.app
-              ? `Backing up ${progress.app}`
-              : 'Starting…'}
+          {cancelling
+            ? 'Cancelling…'
+            : progress.phase === 'verifying'
+              ? 'Checking the backup file…'
+              : progress.app
+                ? `Backing up ${progress.app}`
+                : 'Starting…'}
         </Text>
         <Text size="sm" c="dimmed">
           {progress.apps_done} of {progress.apps_total} apps · {progress.files} files ·{' '}
           {formatBytes(progress.bytes)} · {formatDuration(progress.seconds)}
         </Text>
       </Group>
-      <Bar value={percent} animated aria-label="Backup progress" />
+      <Group gap="sm" wrap="nowrap">
+        <Bar value={percent} animated aria-label="Backup progress" style={{ flex: 1 }} />
+        {progress.phase !== 'verifying' && (
+          <Button
+            size="xs"
+            variant="light"
+            color="red"
+            onClick={() => cancel.mutate()}
+            loading={cancel.isPending}
+            disabled={cancelling}
+          >
+            Cancel
+          </Button>
+        )}
+      </Group>
+      {cancel.isError && <Alert color="red">{errorMessage(cancel.error)}</Alert>}
     </Stack>
+  );
+}
+
+function ChooseApps({
+  opened,
+  onClose,
+  onStart,
+}: {
+  opened: boolean;
+  onClose: () => void;
+  onStart: (apps: string[]) => void;
+}) {
+  const discovered = useDiscoveredApps(opened);
+  const [chosen, setChosen] = useState<string[]>([]);
+  const apps = discovered.data?.apps ?? [];
+  return (
+    <Modal opened={opened} onClose={onClose} title="Back up chosen apps">
+      <Stack gap="sm">
+        <Text size="sm" c="dimmed">
+          Only the apps you tick are backed up, into a backup file of their own. Handy for a quick
+          test.
+        </Text>
+        {discovered.isPending && <Loader size="sm" />}
+        {discovered.isError && <Alert color="red">{errorMessage(discovered.error)}</Alert>}
+        {discovered.data && (
+          <ScrollArea.Autosize mah={360}>
+            <Checkbox.Group value={chosen} onChange={setChosen}>
+              <Stack gap={6}>
+                {apps.map((app) => (
+                  <Checkbox
+                    key={app.name}
+                    value={app.name}
+                    label={app.name}
+                    description={
+                      app.folders.length === 0
+                        ? app.missing.length
+                          ? `on the ${app.missing[0].share} share, which BackupHaven can't see`
+                          : 'no app data to back up'
+                        : undefined
+                    }
+                  />
+                ))}
+              </Stack>
+            </Checkbox.Group>
+          </ScrollArea.Autosize>
+        )}
+        <Group justify="flex-end">
+          <Button variant="default" onClick={onClose}>
+            Close
+          </Button>
+          <Button disabled={chosen.length === 0} onClick={() => onStart(chosen)}>
+            {chosen.length === 1 ? 'Back up 1 app' : `Back up ${chosen.length} apps`}
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
   );
 }
 
@@ -158,6 +240,7 @@ export function StatusPage({ auth }: { auth: AuthState }) {
   const status = useStatus();
   const runNow = useRunNow();
   const logout = useLogout();
+  const [choosing, setChoosing] = useState(false);
   const lastRun = status.data?.last_run ?? null;
   const detail = useRun(lastRun?.id);
 
@@ -226,6 +309,11 @@ export function StatusPage({ auth }: { auth: AuthState }) {
                           {formatDuration(lastRun.summary?.seconds)}
                         </Text>
                       )}
+                      {lastRun.summary?.only && (
+                        <Text size="sm" c="dimmed">
+                          Chosen apps only: {lastRun.summary.only.join(', ')}
+                        </Text>
+                      )}
                     </Group>
                   ) : (
                     <Text size="sm" c="dimmed">
@@ -233,14 +321,31 @@ export function StatusPage({ auth }: { auth: AuthState }) {
                     </Text>
                   )}
                 </Stack>
-                <Button
-                  onClick={() => runNow.mutate()}
-                  loading={runNow.isPending}
-                  disabled={status.data.running !== null}
-                >
-                  Run now
-                </Button>
+                <Group gap="xs">
+                  <Button
+                    variant="default"
+                    onClick={() => setChoosing(true)}
+                    disabled={status.data.running !== null}
+                  >
+                    Choose apps…
+                  </Button>
+                  <Button
+                    onClick={() => runNow.mutate(undefined)}
+                    loading={runNow.isPending}
+                    disabled={status.data.running !== null}
+                  >
+                    Run now
+                  </Button>
+                </Group>
               </Group>
+              <ChooseApps
+                opened={choosing}
+                onClose={() => setChoosing(false)}
+                onStart={(apps) => {
+                  setChoosing(false);
+                  runNow.mutate(apps);
+                }}
+              />
               {runNow.isError && <Alert color="red">{errorMessage(runNow.error)}</Alert>}
               {status.data.running && <Running progress={status.data.running} />}
               {lastRun?.archive && (

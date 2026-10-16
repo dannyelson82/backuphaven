@@ -6,14 +6,14 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from backuphaven import audit, discovery
 from backuphaven.api.deps import DbDep, InteractiveDep, csrf_protect, require_setup_done
 from backuphaven.config import Settings
 from backuphaven.db import DbCheck, Run, RunApp
-from backuphaven.runner import Runner
+from backuphaven.runner import NoSuchAppsError, Runner
 
 router = APIRouter(dependencies=[Depends(require_setup_done), Depends(csrf_protect)])
 
@@ -29,6 +29,11 @@ class RunView(BaseModel):
     verified: bool
     error: str | None
     summary: dict[str, Any] | None
+
+
+class RunRequest(BaseModel):
+    # Back up only these apps (by name); left out, every app is backed up.
+    apps: list[str] | None = Field(default=None, max_length=500)
 
 
 class RunAppView(BaseModel):
@@ -111,13 +116,34 @@ def _db_view(row: DbCheck) -> DbCheckView:
 
 
 @router.post("/runs", status_code=status.HTTP_202_ACCEPTED)
-def run_now(request: Request, db: DbDep, principal: InteractiveDep) -> dict[str, int]:
-    run_id = _runner(request).start("manual")
+def run_now(
+    request: Request, db: DbDep, principal: InteractiveDep, body: RunRequest | None = None
+) -> dict[str, int]:
+    only = body.apps if body is not None else None
+    try:
+        run_id = _runner(request).start("manual", only)
+    except NoSuchAppsError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from None
     if run_id is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "run_in_progress")
     with db.write() as session:
-        audit.record(session, principal.actor, "run.started", str(run_id))
+        audit.record(
+            session,
+            principal.actor,
+            "run.started",
+            str(run_id),
+            None if only is None else {"apps": only},
+        )
     return {"run_id": run_id}
+
+
+@router.post("/runs/cancel", status_code=status.HTTP_202_ACCEPTED)
+def cancel_run(request: Request, db: DbDep, principal: InteractiveDep) -> dict[str, bool]:
+    if not _runner(request).cancel():
+        raise HTTPException(status.HTTP_409_CONFLICT, "no_run_in_progress")
+    with db.write() as session:
+        audit.record(session, principal.actor, "run.cancelled")
+    return {"cancelling": True}
 
 
 @router.get("/runs")

@@ -1,5 +1,6 @@
 """FastAPI application factory."""
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -18,8 +19,10 @@ from backuphaven.db.types import utcnow
 from backuphaven.headers import SecurityHeadersMiddleware
 from backuphaven.middleware import RequestLogMiddleware
 from backuphaven.plugins.registry import bundled
-from backuphaven.runner import Runner
+from backuphaven.runner import Runner, remove_leftovers
 from backuphaven.secretbox import SecretBox
+
+logger = logging.getLogger(__name__)
 
 
 def mark_interrupted_runs(db: Database) -> None:
@@ -54,6 +57,9 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         db.migrate()
         mark_interrupted_runs(db)
+        removed = remove_leftovers(settings.backups_dir)
+        if removed:
+            logger.info("removed what an interrupted run left behind", extra={"files": removed})
         yield
         db.close()
 

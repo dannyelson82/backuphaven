@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './client';
 
-export type RunStatus = 'running' | 'ok' | 'warning' | 'failed';
+export type RunStatus = 'running' | 'ok' | 'warning' | 'failed' | 'cancelled';
 
 export interface Run {
   id: number;
@@ -19,6 +19,8 @@ export interface Run {
     warnings: number;
     files: number;
     seconds: number;
+    // Set when Run now was limited to some apps.
+    only?: string[];
   } | null;
 }
 
@@ -91,10 +93,39 @@ export function useRun(id: number | null | undefined) {
   });
 }
 
+/** Start a backup; with `apps`, only those apps are backed up. */
 export function useRunNow() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => api<{ run_id: number }>('runs', { method: 'POST' }),
+    mutationFn: (apps?: string[]) =>
+      api<{ run_id: number }>('runs', {
+        method: 'POST',
+        ...(apps ? { body: JSON.stringify({ apps }) } : {}),
+      }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: STATUS_KEY }),
+  });
+}
+
+export function useCancelRun() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<{ cancelling: boolean }>('runs/cancel', { method: 'POST' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: STATUS_KEY }),
+  });
+}
+
+export interface DiscoveredApp {
+  name: string;
+  image: string;
+  plugin: string;
+  folders: { target: string; host: string; share: string }[];
+  missing: { target: string; host: string; share: string }[];
+}
+
+export function useDiscoveredApps(enabled: boolean) {
+  return useQuery({
+    queryKey: ['apps', 'discovered'],
+    queryFn: () => api<{ apps: DiscoveredApp[] }>('apps/discovered'),
+    enabled,
   });
 }

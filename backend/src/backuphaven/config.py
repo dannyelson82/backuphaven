@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     log_level: LogLevel = "info"
     log_file_max_bytes: int = 10 * 1024 * 1024
     log_file_backups: int = 5
+    # Diagnostics files (Settings → Developer); None: /diagnostics if mapped,
+    # otherwise <config>/diagnostics.
+    diagnostics_dir: Path | None = None
 
     @property
     def log_dir(self) -> Path:

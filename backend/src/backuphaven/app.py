@@ -9,13 +9,20 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from backuphaven import __version__
-from backuphaven.api import app_routes, auth_routes, run_routes, security_routes
+from backuphaven import __version__, settings_store
+from backuphaven.api import (
+    app_routes,
+    auth_routes,
+    developer_routes,
+    run_routes,
+    security_routes,
+)
 from backuphaven.auth.network import IPAddress, read_default_gateways
 from backuphaven.auth.throttle import LoginThrottle
 from backuphaven.config import Settings, get_settings
 from backuphaven.db import Database, Run
 from backuphaven.db.types import utcnow
+from backuphaven.diagnostics import SETTING_KEY, Diagnostics
 from backuphaven.headers import SecurityHeadersMiddleware
 from backuphaven.middleware import RequestLogMiddleware
 from backuphaven.plugins.registry import bundled
@@ -52,15 +59,24 @@ def create_app(
     """
     settings = settings or get_settings()
     db = Database(settings.config_dir / "backuphaven.db")
+    diagnostics = Diagnostics(settings)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         db.migrate()
         mark_interrupted_runs(db)
+        with db.read() as session:
+            developer = settings_store.get(session, SETTING_KEY) or {}
+        if developer.get("diagnostics"):
+            try:
+                diagnostics.enable()
+            except OSError:
+                logger.warning("diagnostics files couldn't be switched on", exc_info=True)
         removed = remove_leftovers(settings.backups_dir)
         if removed:
             logger.info("removed what an interrupted run left behind", extra={"files": removed})
         yield
+        diagnostics.disable()
         db.close()
 
     app = FastAPI(
@@ -77,7 +93,8 @@ def create_app(
     app.state.throttle = LoginThrottle()
     app.state.gateways = read_default_gateways() if gateways is None else gateways
     app.state.gateway_seen_at = None
-    app.state.runner = Runner(db, settings, bundled())
+    app.state.diagnostics = diagnostics
+    app.state.runner = Runner(db, settings, bundled(), diagnostics)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestLogMiddleware)
 
@@ -89,7 +106,7 @@ def create_app(
     def version() -> Version:
         return Version(name="BackupHaven", version=__version__)
 
-    for module in (auth_routes, security_routes, app_routes, run_routes):
+    for module in (auth_routes, security_routes, app_routes, run_routes, developer_routes):
         app.include_router(module.router, prefix="/api/v1")
 
     web_dir = settings.web_dir

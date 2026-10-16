@@ -23,6 +23,18 @@ The time zone comes from the container's `TZ` setting, which Unraid fills in.
 If the times look wrong, check **TZ** in BackupHaven's container settings
 (under **Show more settings**).
 
+## Keeping backups
+
+- **Nightly**: how many days of backups to keep (7). If several backups were
+  made on one day, the newest is kept.
+- **Weekly**: how many weeks to keep one backup from (4).
+- **Monthly**: how many months to keep one backup from (6).
+- **Minimum free space**: in GB (2). Backups don't start below this.
+
+Press **Save**. The new numbers are used after the next backup, when old backups
+are cleared out. See [Old backups](backing-up.md#old-backups) for what is never
+deleted.
+
 ## Developer
 
 ### Diagnostics files

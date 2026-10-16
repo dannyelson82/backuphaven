@@ -12,13 +12,14 @@ import os
 import shutil
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from backuphaven import __version__, discovery
-from backuphaven.archive import ArchiveWriter, folder_key, safe_name, verify
+from backuphaven import __version__, discovery, retention
+from backuphaven.archive import PARTIAL_SUFFIX, ArchiveWriter, folder_key, safe_name, verify
 from backuphaven.config import Settings
 from backuphaven.db import Database, DbCheck, Run, RunApp
 from backuphaven.db.types import utcnow
@@ -132,8 +133,14 @@ def worst(statuses: list[Status]) -> Status:
     return "warning" if "warning" in statuses else "ok"
 
 
-def archive_name(now: datetime) -> str:
-    return f"{ARCHIVE_PREFIX}{now.strftime('%Y-%m-%dT%H%M%S')}{ARCHIVE_SUFFIX}"
+def archive_name(now: datetime, taken: Callable[[str], bool] = lambda _: False) -> str:
+    """``backuphaven-<date>T<time>.tar.zst``; ``-2``, ``-3``… when that name is taken
+    (two backups started in the same second)."""
+    stamp = now.strftime("%Y-%m-%dT%H%M%S")
+    name, n = f"{ARCHIVE_PREFIX}{stamp}{ARCHIVE_SUFFIX}", 2
+    while taken(name):
+        name, n = f"{ARCHIVE_PREFIX}{stamp}-{n}{ARCHIVE_SUFFIX}", n + 1
+    return name
 
 
 def _unique(name: str, used: set[str]) -> str:
@@ -183,7 +190,7 @@ class Runner:
         try:
             if not scheduled:
                 self._check_names(only)
-            run_id = self._create_run(trigger, only)
+            run_id = self._create_run(trigger, only, chosen=only is not None and not scheduled)
         except Exception:
             self._lock.release()
             raise
@@ -202,7 +209,7 @@ class Runner:
             if not scheduled:
                 self._check_names(only)
             self._cancel.clear()
-            run_id = self._create_run(trigger, only)
+            run_id = self._create_run(trigger, only, chosen=only is not None and not scheduled)
             self._run(run_id, only)
         return run_id
 
@@ -238,11 +245,12 @@ class Runner:
         finally:
             self._lock.release()
 
-    def _create_run(self, trigger: str, only: list[str] | None = None) -> int:
+    def _create_run(self, trigger: str, only: list[str] | None = None, chosen: bool = False) -> int:
+        """``chosen``: Choose apps… rather than the backup schedule; the keep rules
+        treat those backups as extras."""
+        summary = None if only is None else {"only": only, "chosen": chosen}
         with self._db.write() as session:
-            run = Run(
-                trigger=trigger, status="running", summary=None if only is None else {"only": only}
-            )
+            run = Run(trigger=trigger, status="running", summary=summary)
             session.add(run)
             session.flush()
             return run.id
@@ -262,9 +270,11 @@ class Runner:
         verified = False
         writer: ArchiveWriter | None = None
         cancelled = False
+        with self._db.read() as session:
+            min_free = retention.min_free_bytes(session, settings.min_free_bytes)
         try:
             backups.mkdir(parents=True, exist_ok=True)
-            if _free_bytes(backups) < settings.min_free_bytes:
+            if _free_bytes(backups) < min_free:
                 raise LowSpaceError("not enough free space on the backups disk")
             work.mkdir(parents=True, exist_ok=True)
             apps = discovery.discover(*self._discovery_dirs())
@@ -286,7 +296,12 @@ class Runner:
                 },
             )
             self.progress.apps_total = len(apps)
-            archive = backups / archive_name(datetime.now(UTC))
+            archive = backups / archive_name(
+                datetime.now(UTC),
+                lambda name: (
+                    (backups / name).exists() or (backups / f"{name}{PARTIAL_SUFFIX}").exists()
+                ),
+            )
             writer = ArchiveWriter(archive)
             used: set[str] = set()
             for app in apps:
@@ -297,7 +312,7 @@ class Runner:
                     self.progress.phase = "cancelling"
                 results.append(self._backup_app(writer, app, key, work))
                 self.progress.apps_done += 1
-                if _free_bytes(backups) < settings.min_free_bytes:
+                if _free_bytes(backups) < min_free:
                     raise LowSpaceError("the backups disk filled up during the run")
             for name in gone:  # in the backup schedule, but its template is gone
                 missing = AppResult(name=name, plugin="-")
@@ -353,6 +368,13 @@ class Runner:
             )  # fmt: skip
             self.progress = None
             self._cancel.clear()
+            self._apply_keep_rules()
+
+    def _apply_keep_rules(self) -> None:
+        try:
+            retention.apply(self._db, self._settings.backups_dir, self._settings.tz)
+        except Exception:
+            logger.exception("keep rules failed; no backups were deleted by this step")
 
     def _own(self, path: Path) -> None:
         if os.geteuid() == 0:
@@ -625,6 +647,7 @@ class Runner:
             run.verified = verified
             run.error = error
             run.summary = {
+                **(run.summary or {}),
                 "apps": len(results),
                 "failed": sum(r.status == "failed" for r in results),
                 "skipped": sum(r.status == "skipped" for r in results),

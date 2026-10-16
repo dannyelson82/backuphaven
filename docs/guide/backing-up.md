@@ -63,6 +63,12 @@ check.
 | **Failed** | Something couldn't be backed up, or a database is damaged. The apps that worked are still in the backup file. |
 | **Cancelled** | Someone pressed Cancel. No backup file was kept. |
 
+Below the results, **Skipped** lists apps that weren't backed up on purpose,
+with the reason. **not installed** means none of the app's folders exist any
+more: the container was removed, but Unraid keeps its template. A skipped app
+doesn't make the backup **Warnings** or **Failed**. If the app should still be
+there, check its container and its folders.
+
 ## Database health
 
 The **Database health** table lists every database from the last backup:

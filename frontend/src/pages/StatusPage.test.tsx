@@ -72,6 +72,18 @@ it('shows the last backup, database health and app results', async () => {
             errors: [],
             warnings: ['config.xml changed while it was read'],
           },
+          {
+            app: 'oldapp',
+            plugin: 'generic',
+            status: 'skipped',
+            files: 0,
+            bytes: 0,
+            seconds: 0,
+            errors: [],
+            warnings: [
+              "not installed: /mnt/user/appdata/oldapp doesn't exist (container removed?)",
+            ],
+          },
         ],
         databases: [],
       },
@@ -89,6 +101,8 @@ it('shows the last backup, database health and app results', async () => {
   expect(screen.getByText('Damaged')).toBeInTheDocument();
   expect(screen.getByText('row 3 missing from index')).toBeInTheDocument();
   expect(await screen.findByText('config.xml changed while it was read')).toBeInTheDocument();
+  expect(screen.getByText('Skipped (1)')).toBeInTheDocument();
+  expect(screen.getByText(/oldapp: not installed/)).toBeInTheDocument();
 });
 
 it('starts a backup and shows its progress', async () => {

@@ -2,6 +2,7 @@ import { Alert, Center, Loader } from '@mantine/core';
 import { Route, Routes } from 'react-router';
 import { useAuthState } from '../api/auth';
 import { AppsPage } from '../pages/AppsPage';
+import { BackupsPage } from '../pages/BackupsPage';
 import { errorMessage } from '../api/client';
 import { SettingsPage } from '../pages/SettingsPage';
 import { StatusPage } from '../pages/StatusPage';
@@ -35,6 +36,7 @@ export function AuthGate() {
   return (
     <Layout auth={auth.data}>
       <Routes>
+        <Route path="/backups" element={<BackupsPage />} />
         <Route path="/apps" element={<AppsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<StatusPage />} />

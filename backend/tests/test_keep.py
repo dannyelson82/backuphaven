@@ -112,3 +112,11 @@ def test_days_follow_the_server_time_zone() -> None:
 
 def test_no_backups() -> None:
     assert decide([], KeepSettings(), UTC, NOW) == {}
+
+
+def test_last_good_copy_is_recorded_even_when_kept_for_other_reasons() -> None:
+    """It's what stops a backup being deleted by hand (Backups page)."""
+    older = Backup("older", NOW - timedelta(days=1), good=True, healthy=frozenset({"tool/db"}))
+    newer = Backup("newer", NOW, good=True)
+    reasons = decide([older, newer], KeepSettings(), UTC, NOW)
+    assert reasons["older"] == ["nightly", "last good copy of tool/db"]

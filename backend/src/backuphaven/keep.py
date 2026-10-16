@@ -78,9 +78,8 @@ def decide(
         for database in backup.healthy:
             last_copy.setdefault(database, backup.name)
     for database, name in sorted(last_copy.items()):
-        # Only worth saying when nothing else keeps it.
-        if not any(not r.startswith("last good copy") for r in reasons[name]):
-            reasons[name].append(f"last good copy of {database}")
+        # Always recorded: it's what stops the backup being deleted by hand.
+        reasons[name].append(f"last good copy of {database}")
 
     newest_good = any_good[0].created if any_good else None
     window = timedelta(days=max(settings.nightly, 1))

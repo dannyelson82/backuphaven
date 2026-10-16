@@ -13,6 +13,7 @@ from backuphaven import __version__, settings_store
 from backuphaven.api import (
     app_routes,
     auth_routes,
+    backup_routes,
     developer_routes,
     keeping_routes,
     run_routes,
@@ -117,6 +118,7 @@ def create_app(
         security_routes,
         app_routes,
         run_routes,
+        backup_routes,
         schedule_routes,
         keeping_routes,
         developer_routes,

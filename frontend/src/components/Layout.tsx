@@ -5,6 +5,7 @@ import { type AuthState, useLogout } from '../api/auth';
 
 const PAGES = [
   { to: '/', label: 'Dashboard' },
+  { to: '/backups', label: 'Backups' },
   { to: '/apps', label: 'Apps' },
   { to: '/settings', label: 'Settings' },
 ];

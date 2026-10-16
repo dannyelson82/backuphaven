@@ -1,18 +1,4 @@
-import {
-  Alert,
-  Anchor,
-  Card,
-  Code,
-  Container,
-  Group,
-  Loader,
-  Stack,
-  Switch,
-  Table,
-  Text,
-  Title,
-} from '@mantine/core';
-import { Link } from 'react-router';
+import { Alert, Card, Code, Loader, Stack, Switch, Table, Text, Title } from '@mantine/core';
 import { errorMessage } from '../api/client';
 import { useDeveloperSettings, useSetDiagnostics } from '../api/developer';
 import { formatBytes, timeAgo } from '../format';
@@ -74,16 +60,9 @@ function Developer() {
 
 export function SettingsPage() {
   return (
-    <Container size="md" py="md">
-      <Stack gap="md">
-        <Group justify="space-between">
-          <Title order={2}>Settings</Title>
-          <Anchor component={Link} to="/">
-            Back to status
-          </Anchor>
-        </Group>
-        <Developer />
-      </Stack>
-    </Container>
+    <Stack gap="md">
+      <Title order={3}>Settings</Title>
+      <Developer />
+    </Stack>
   );
 }

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from backuphaven import audit, discovery
+from backuphaven import audit, discovery, schedule
 from backuphaven.api.deps import DbDep, InteractiveDep, csrf_protect, require_setup_done
 from backuphaven.config import Settings
 from backuphaven.db import DbCheck, Run, RunApp
@@ -86,6 +86,7 @@ class MissingShareView(BaseModel):
 
 class StatusView(BaseModel):
     running: ProgressView | None
+    scheduled_apps: list[str] = []
     last_run: RunView | None
     last_good_run: RunView | None
     apps: int
@@ -126,8 +127,14 @@ def run_now(
     request: Request, db: DbDep, principal: InteractiveDep, body: RunRequest | None = None
 ) -> dict[str, int]:
     only = body.apps if body is not None else None
+    scheduled = only is None
+    if scheduled:  # Run now: the apps in the backup schedule (ADR-0011)
+        with db.read() as session:
+            only = schedule.load_apps(session)
+        if not only:
+            raise HTTPException(status.HTTP_409_CONFLICT, "schedule_empty")
     try:
-        run_id = _runner(request).start("manual", only)
+        run_id = _runner(request).start("manual", only, scheduled=scheduled)
     except NoSuchAppsError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from None
     if run_id is None:
@@ -198,6 +205,7 @@ def get_status(request: Request, db: DbDep, _principal: InteractiveDep) -> Statu
     progress = _runner(request).progress
     apps = discovery.discover(settings.templates_dir, settings.data_root)
     with db.read() as session:
+        scheduled_apps = schedule.load_apps(session)
         last = session.scalars(
             select(Run).where(Run.status != "running").order_by(Run.id.desc()).limit(1)
         ).first()
@@ -228,14 +236,18 @@ def get_status(request: Request, db: DbDep, _principal: InteractiveDep) -> Statu
             bytes=progress.bytes,
             phase=progress.phase,
         ),
+        scheduled_apps=scheduled_apps,
         last_run=None if last is None else _view(last),
         last_good_run=None if good is None else _view(good),
         apps=len(apps),
         data_shares=sorted(discovery.mounted_data_shares(settings.data_root)),
         templates_found=settings.templates_dir.is_dir(),
+        # Only apps in the backup schedule need attention here; the Apps page
+        # shows the rest.
         missing_shares=[
             MissingShareView(app=a.name, target=m.target, share=m.share)
             for a in apps
+            if a.name.lower() in {n.lower() for n in scheduled_apps}
             for m in a.missing
         ],
         backups_free_bytes=free,

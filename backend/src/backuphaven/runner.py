@@ -109,6 +109,22 @@ class AppResult:
             self.warnings.append(text)
 
 
+def not_installed(data_root: Path, app: discovery.App) -> str | None:
+    """Why an app looks removed, or None. Removed containers keep their Unraid
+    template; when none of the app's data folders exist any more, there is
+    nothing to back up (ADR-0011). Apps on unmounted shares aren't judged."""
+    if not app.folders or app.missing:
+        return None
+    for folder in app.folders:
+        try:
+            if resolve_app_folder(data_root, folder.host).exists():
+                return None
+        except (OutsideShareError, ValueError):
+            return None  # reported properly by the backup itself
+    hosts = ", ".join(f.host for f in app.folders)
+    return f"not installed: {hosts} doesn't exist (container removed?)"
+
+
 def worst(statuses: list[Status]) -> Status:
     """The run's result from its apps'; skipped apps don't count (ADR-0011)."""
     if "failed" in statuses:
@@ -154,15 +170,19 @@ class Runner:
     def running(self) -> bool:
         return self._lock.locked()
 
-    def start(self, trigger: str, only: list[str] | None = None) -> int | None:
+    def start(
+        self, trigger: str, only: list[str] | None = None, scheduled: bool = False
+    ) -> int | None:
         """Start a run in the background. None if one is already running.
 
-        ``only`` limits the run to those apps (by name); raises ``NoSuchAppsError``
-        for names that aren't found."""
+        ``only`` limits the run to those apps (by name). Chosen by hand, names that
+        aren't found raise ``NoSuchAppsError``; from the backup schedule
+        (``scheduled``), they are reported as skipped instead."""
         if not self._lock.acquire(blocking=False):
             return None
         try:
-            self._check_names(only)
+            if not scheduled:
+                self._check_names(only)
             run_id = self._create_run(trigger, only)
         except Exception:
             self._lock.release()
@@ -174,10 +194,13 @@ class Runner:
         thread.start()
         return run_id
 
-    def run_now(self, trigger: str = "manual", only: list[str] | None = None) -> int:
+    def run_now(
+        self, trigger: str = "manual", only: list[str] | None = None, scheduled: bool = False
+    ) -> int:
         """Run in this thread (tests and the scheduler's own thread)."""
         with self._lock:
-            self._check_names(only)
+            if not scheduled:
+                self._check_names(only)
             self._cancel.clear()
             run_id = self._create_run(trigger, only)
             self._run(run_id, only)
@@ -246,8 +269,11 @@ class Runner:
             work.mkdir(parents=True, exist_ok=True)
             apps = discovery.discover(*self._discovery_dirs())
             found = len(apps)
+            gone: list[str] = []
             if only is not None:
                 wanted = {n.lower() for n in only}
+                found_names = {a.name.lower() for a in apps}
+                gone = [n for n in only if n.lower() not in found_names]
                 apps = [a for a in apps if a.name.lower() in wanted]
             logger.debug(
                 "run starting",
@@ -273,6 +299,10 @@ class Runner:
                 self.progress.apps_done += 1
                 if _free_bytes(backups) < settings.min_free_bytes:
                     raise LowSpaceError("the backups disk filled up during the run")
+            for name in gone:  # in the backup schedule, but its template is gone
+                missing = AppResult(name=name, plugin="-")
+                missing.skip("not found: no Unraid template with this name any more")
+                results.append(missing)
             self._check_cancel()
             self.progress.app, self.progress.phase = None, "verifying"
             step = time.monotonic()
@@ -370,7 +400,7 @@ class Runner:
             },
         )
         base = f"apps/{key}"
-        gone = self._not_installed(app)
+        gone = not_installed(self._settings.data_root, app)
         if gone is not None:
             result.skip(gone)
             logger.debug("app skipped", extra={"app": app.name, "reason": gone})
@@ -407,21 +437,6 @@ class Runner:
             },
         )
         return result
-
-    def _not_installed(self, app: discovery.App) -> str | None:
-        """Why an app looks removed, or None. Removed containers keep their Unraid
-        template; when none of the app's data folders exist any more, there is
-        nothing to back up (ADR-0011). Apps on unmounted shares aren't judged."""
-        if not app.folders or app.missing:
-            return None
-        for folder in app.folders:
-            try:
-                if resolve_app_folder(self._settings.data_root, folder.host).exists():
-                    return None
-            except (OutsideShareError, ValueError):
-                return None  # reported properly by the backup itself
-        hosts = ", ".join(f.host for f in app.folders)
-        return f"not installed: {hosts} doesn't exist (container removed?)"
 
     def _backup_folder(
         self,

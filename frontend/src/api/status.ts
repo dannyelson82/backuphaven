@@ -67,6 +67,7 @@ export interface Progress {
 
 export interface Status {
   running: Progress | null;
+  scheduled_apps: string[];
   last_run: Run | null;
   last_good_run: Run | null;
   apps: number;
@@ -123,12 +124,28 @@ export interface DiscoveredApp {
   plugin: string;
   folders: { target: string; host: string; share: string }[];
   missing: { target: string; host: string; share: string }[];
+  scheduled: boolean;
+  not_installed: string | null;
+  last_backup: { run_id: number; started_at: string; status: RunStatus; bytes: number } | null;
 }
 
 export function useDiscoveredApps(enabled: boolean) {
   return useQuery({
     queryKey: ['apps', 'discovered'],
-    queryFn: () => api<{ apps: DiscoveredApp[] }>('apps/discovered'),
+    queryFn: () =>
+      api<{ apps: DiscoveredApp[]; scheduled: string[]; data_shares: string[] }>('apps/discovered'),
     enabled,
+  });
+}
+
+export function useScheduleApps() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (apps: string[]) =>
+      api<{ apps: string[] }>('schedule/apps', { method: 'PUT', body: JSON.stringify({ apps }) }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['apps', 'discovered'] });
+      void queryClient.invalidateQueries({ queryKey: STATUS_KEY });
+    },
   });
 }

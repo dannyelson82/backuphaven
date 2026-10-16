@@ -1,11 +1,13 @@
 import { Alert, Center, Loader } from '@mantine/core';
 import { Route, Routes } from 'react-router';
 import { useAuthState } from '../api/auth';
+import { AppsPage } from '../pages/AppsPage';
 import { errorMessage } from '../api/client';
 import { SettingsPage } from '../pages/SettingsPage';
 import { StatusPage } from '../pages/StatusPage';
 import { LoginPage } from '../pages/LoginPage';
 import { SetupPage } from '../pages/SetupPage';
+import { Layout } from './Layout';
 
 /** Shows setup, login or the app depending on the server's auth state. */
 export function AuthGate() {
@@ -31,9 +33,12 @@ export function AuthGate() {
   if (!auth.data.authenticated) return <LoginPage />;
 
   return (
-    <Routes>
-      <Route path="/settings" element={<SettingsPage />} />
-      <Route path="*" element={<StatusPage auth={auth.data} />} />
-    </Routes>
+    <Layout auth={auth.data}>
+      <Routes>
+        <Route path="/apps" element={<AppsPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="*" element={<StatusPage />} />
+      </Routes>
+    </Layout>
   );
 }

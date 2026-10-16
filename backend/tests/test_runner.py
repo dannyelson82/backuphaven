@@ -200,6 +200,12 @@ def test_run_now_api_and_status(unraid: Settings) -> None:
     with TestClient(app):
         admin = admin_client(app)
         assert admin.get(f"{API}/status").json()["last_run"] is None
+        # Nothing is backed up until apps are added to the schedule (ADR-0011).
+        empty = admin.post(f"{API}/runs")
+        assert empty.status_code == 409 and empty.json()["detail"] == "schedule_empty"
+        assert admin.get(f"{API}/status").json()["missing_shares"] == []
+        apps = ["elsewhere", "plex", "sonarr", "Tool"]
+        assert admin.put(f"{API}/schedule/apps", json={"apps": apps}).status_code == 200
         run_id = admin.post(f"{API}/runs").json()["run_id"]
         for _ in range(200):
             if not app.state.runner.running:
@@ -327,3 +333,53 @@ def test_an_app_whose_folder_is_gone_is_skipped_not_failed(unraid: Settings, db:
     assert apps["Tool"].status == "ok"
     files = contents(unraid.backups_dir / run.archive)  # type: ignore[operator]
     assert not any(name.startswith("apps/old/") for name in files)
+
+
+def test_backup_schedule_list_and_apps_page_data(unraid: Settings) -> None:
+    app = create_app(unraid, gateways=frozenset())
+    with TestClient(app):
+        admin = admin_client(app)
+        assert admin.get(f"{API}/schedule/apps").json() == {"apps": []}
+        bad = admin.put(f"{API}/schedule/apps", json={"apps": ["nothere"]})
+        assert bad.status_code == 422
+        saved = admin.put(f"{API}/schedule/apps", json={"apps": ["Tool", "plex", "PLEX"]})
+        assert saved.json() == {"apps": ["plex", "Tool"]}
+        run_id = admin.post(f"{API}/runs").json()["run_id"]
+        for _ in range(200):
+            if not app.state.runner.running:
+                break
+            time.sleep(0.05)
+        found = admin.get(f"{API}/apps/discovered").json()
+        assert found["scheduled"] == ["plex", "Tool"]
+        apps = {a["name"]: a for a in found["apps"]}
+        assert apps["plex"]["scheduled"] and not apps["sonarr"]["scheduled"]
+        assert apps["plex"]["last_backup"]["run_id"] == run_id
+        assert apps["plex"]["last_backup"]["status"] == "ok"
+        assert apps["sonarr"]["last_backup"] is None
+        assert apps["plex"]["not_installed"] is None
+
+
+def test_scheduled_apps_whose_template_is_gone_are_reported_as_skipped(
+    unraid: Settings,
+) -> None:
+    app = create_app(unraid, gateways=frozenset())
+    with TestClient(app):
+        admin = admin_client(app)
+        admin.put(f"{API}/schedule/apps", json={"apps": ["Tool", "sonarr"]})
+        (unraid.templates_dir / "my-sonarr.xml").unlink()  # container and template removed
+        # Still listed (so it can be removed by hand), and runs report it.
+        assert admin.get(f"{API}/schedule/apps").json()["apps"] == ["sonarr", "Tool"]
+        assert (
+            admin.put(f"{API}/schedule/apps", json={"apps": ["sonarr", "Tool"]}).status_code == 200
+        )
+        run_id = admin.post(f"{API}/runs").json()["run_id"]
+        for _ in range(200):
+            if not app.state.runner.running:
+                break
+            time.sleep(0.05)
+        detail = admin.get(f"{API}/runs/{run_id}").json()
+        assert detail["status"] == "ok"
+        apps = {a["app"]: a for a in detail["apps"]}
+        assert apps["sonarr"]["status"] == "skipped"
+        assert "not found" in apps["sonarr"]["warnings"][0]
+        assert apps["Tool"]["status"] == "ok"

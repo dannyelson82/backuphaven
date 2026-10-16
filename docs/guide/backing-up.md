@@ -1,17 +1,19 @@
 ---
 title: Backing up
 order: 30
-summary: Run a backup, read the status page, and know what the results mean.
+summary: Run a backup, read the Dashboard, and know what the results mean.
 ---
 
 # Backing up
 
-The page you see after logging in is the **status page**. Anything that needs
+The page you see after logging in is the **Dashboard**. Anything that needs
 your attention is shown at the top.
 
 ## Run now
 
-**Run now** makes a backup straight away. While it runs, the page shows which
+**Run now** backs up the apps in the [backup schedule](apps.md) straight away.
+While the schedule is empty, Run now can't be pressed and the Dashboard says
+how to add apps. While a backup runs, the page shows which
 app it's on, how many apps are done, and how much it has saved so far. You can
 close the page; the backup carries on.
 
@@ -23,7 +25,8 @@ contents list (`….manifest.json`) sits next to it.
 
 **Choose apps…** (next to Run now) lists every app BackupHaven found. Tick the
 ones you want and press **Back up N apps**. Only those apps go into the backup
-file. This is handy for a quick test, or for one app before you update it.
+file, whether they are in the backup schedule or not, and the schedule doesn't
+change. This is handy for a quick test, or for one app before you update it.
 
 ### Cancel a backup
 
@@ -85,5 +88,6 @@ The **Database health** table lists every database from the last backup:
 
 ## Shares BackupHaven can't see
 
-If an app keeps its data on a share that BackupHaven hasn't been given, the
-status page says which share to add. See [Installing](install.md#data-shares).
+If an app in the backup schedule keeps its data on a share that BackupHaven
+hasn't been given, the
+Dashboard says which share to add. See [Installing](install.md#data-shares).

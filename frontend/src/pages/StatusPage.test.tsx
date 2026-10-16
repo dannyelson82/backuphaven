@@ -124,7 +124,7 @@ it('starts a backup and shows its progress', async () => {
               phase: 'backing up',
             },
           }
-        : EMPTY_STATUS,
+        : { ...EMPTY_STATUS, scheduled_apps: ['plex', 'sonarr'] },
     }),
     'POST runs': () => {
       started = true;
@@ -132,7 +132,10 @@ it('starts a backup and shows its progress', async () => {
     },
   });
   render(<App />);
-  await userEvent.click(await screen.findByRole('button', { name: 'Run now' }));
+  expect(
+    await screen.findByText(/backs up the 2 apps in the backup schedule: plex, sonarr/),
+  ).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Run now' }));
   expect(await screen.findByText('Backing up plex')).toBeInTheDocument();
   expect(screen.getByText(/1 of 3 apps · 40 files · 5\.0 MB/)).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Run now' })).toBeDisabled();
@@ -262,4 +265,12 @@ it('says when the container list is missing and when a backup failed', async () 
   expect(await screen.findByText("BackupHaven can't see your containers")).toBeInTheDocument();
   expect(screen.getByText('The last backup failed')).toBeInTheDocument();
   expect(screen.getByText('not enough free space on the backups disk')).toBeInTheDocument();
+});
+
+it('asks for apps in the backup schedule before Run now works', async () => {
+  mockApi({ 'GET auth/state': LOGGED_IN, 'GET status': { body: { ...EMPTY_STATUS, apps: 5 } } });
+  render(<App />);
+  expect(await screen.findByText('Nothing is in the backup schedule yet')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Run now' })).toBeDisabled();
+  expect(screen.getByText('0 of 5 apps')).toBeInTheDocument();
 });

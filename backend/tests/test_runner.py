@@ -418,3 +418,13 @@ def test_dashboard_totals_and_latest_health_of_each_scheduled_database(unraid: S
             ("Tool", "state.sqlite"),
         ]
         assert state["backups_count"] == 2 and state["backups_bytes"] > 0
+
+
+def test_a_folder_inside_another_is_stored_once() -> None:
+    from backuphaven.discovery import DataFolder
+    from backuphaven.runner import _nested_once
+
+    config = DataFolder("/config", "/mnt/user/appdata/abs", "appdata")
+    metadata = DataFolder("/metadata", "/mnt/user/appdata/abs/metadata", "appdata")
+    other = DataFolder("/data", "/mnt/user/appdata/abs-data", "appdata")
+    assert _nested_once([config, metadata, other]) == [config, other]

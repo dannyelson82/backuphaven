@@ -1,0 +1,10 @@
+plugin: cantinarr
+image: ghcr.io/windoze95/cantinarr:latest
+folders:
+  - target: /config
+    files:
+      settings.json: "{\"example\": true}"
+      logs/cantinarr.log: "log"
+    sqlite: [cantinarr.db]
+must_restore: [/config/cantinarr.db, /config/settings.json]
+must_not_backup: [/config/logs/cantinarr.log]

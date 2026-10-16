@@ -1,0 +1,17 @@
+plugin: chaptarr
+image: chaptarr/chaptarr:latest
+folders:
+  - target: /config
+    files:
+      config.xml: "<Config><ApiKey>example</ApiKey></Config>"
+      logs/chaptarr.txt: "log"
+      MediaCover/1/poster.jpg: "image"
+      Backups/scheduled/chaptarr_backup.zip: "zip"
+    sqlite: [chaptarr.db, staging.db, cache.db, logs.db]
+must_restore: [/config/config.xml, /config/chaptarr.db, /config/staging.db]
+must_not_backup:
+  - /config/logs/chaptarr.txt
+  - /config/logs.db
+  - /config/cache.db
+  - /config/MediaCover/1/poster.jpg
+  - /config/Backups/scheduled/chaptarr_backup.zip

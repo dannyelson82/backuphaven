@@ -15,7 +15,7 @@ import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 
 from backuphaven import __version__, discovery, retention
@@ -127,6 +127,24 @@ def not_installed(data_root: Path, app: discovery.App) -> str | None:
             return None  # reported properly by the backup itself
     hosts = ", ".join(f.host for f in app.folders)
     return f"not installed: {hosts} doesn't exist (container removed?)"
+
+
+def _covers(folder: str | list[str], target: str) -> bool:
+    """Whether a plugin's ``backup.folder`` (one target, several, or "*") takes a target."""
+    if isinstance(folder, list):
+        return target in folder
+    return folder in ("*", target)
+
+
+def _nested_once(folders: list[discovery.DataFolder]) -> list[discovery.DataFolder]:
+    """Leave out folders inside another chosen folder (e.g. Audiobookshelf's
+    /metadata stored inside /config), so their files are stored once."""
+    hosts = [PurePosixPath(f.host) for f in folders]
+    return [
+        f
+        for f, host in zip(folders, hosts, strict=True)
+        if not any(other != host and host.is_relative_to(other) for other in hosts)
+    ]
 
 
 def worst(statuses: list[Status]) -> Status:
@@ -450,11 +468,14 @@ class Runner:
                 result.warn(f"template couldn't be read: {exc}")
         if plugin.backup.mode == "stop":
             result.warn("stop mode needs the socket proxy (coming later); backed up while running")
-        folders = [
-            f
-            for f in app.folders
-            if plugin.backup.folder in ("*", f.target) or f.target in plugin.backup.share_folders
-        ]
+        folders = _nested_once(
+            [
+                f
+                for f in app.folders
+                if _covers(plugin.backup.folder, f.target)
+                or f.target in plugin.backup.share_folders
+            ]
+        )
         if not folders and not app.missing:
             if app.folders:
                 result.error(f"no data folder mapped to {plugin.backup.folder}")

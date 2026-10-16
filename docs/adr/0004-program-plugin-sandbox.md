@@ -1,6 +1,6 @@
 # 0004: Program plugins run locked in, with approved permissions
 
-- Status: accepted
+- Status: accepted; amended by ADR-0010 (no Landlock on Unraid: seccomp lock-down)
 - Date: 2026-10-16
 
 ## Context

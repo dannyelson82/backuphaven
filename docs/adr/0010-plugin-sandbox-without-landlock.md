@@ -1,6 +1,6 @@
 # 0010: Program plugin sandbox on Unraid: seccomp lock-down (no Landlock)
 
-- Status: proposed
+- Status: accepted (owner, 2026-10-16)
 - Date: 2026-10-16
 - Amends: ADR-0004
 
@@ -50,7 +50,7 @@ Strong, independent of the kernel, and plugins can be written in Rust, Go,
 JavaScript and others. Heavier for plugin authors (special build tools), and
 Python plugins become large and slow to start.
 
-## Decision (proposed)
+## Decision
 Option A. It keeps plugins easy to write (ordinary Python), and the security
 promise is the same: a plugin can only do what the owner approved, whatever its
 code contains. WebAssembly stays possible later as a second plugin type if

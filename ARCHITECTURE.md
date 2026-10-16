@@ -145,8 +145,9 @@ called BackupHaven), so a restored server gets its backup settings back too.
   short-lived process per program-plugin call.
 - The main process runs as **root with a reduced set of Linux capabilities**:
   only those needed to read every app's files and restore them with their
-  original owners (`CAP_DAC_READ_SEARCH`, `CAP_DAC_OVERRIDE`, `CAP_CHOWN`,
-  `CAP_FOWNER`, `CAP_SETUID`, `CAP_SETGID`); everything else is dropped. See
+  original owners and permissions (`CAP_DAC_OVERRIDE`, `CAP_CHOWN`,
+  `CAP_FOWNER`, `CAP_FSETID`, `CAP_SETUID`, `CAP_SETGID`); everything else is
+  removed from the bounding set by the entrypoint, with `no_new_privs`. See
   ADR-0006 and SECURITY.md.
 - Program plugins run as an unprivileged user with no capabilities, locked in
   by Landlock and seccomp (ADR-0004).

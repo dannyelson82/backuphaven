@@ -11,9 +11,16 @@ can't do either.
 
 ## Decision
 The main process runs as root inside the container, with all Linux
-capabilities dropped except `CAP_DAC_READ_SEARCH`, `CAP_DAC_OVERRIDE`,
-`CAP_CHOWN`, `CAP_FOWNER`, `CAP_SETUID` and `CAP_SETGID` (the last two only
-to start program plugins as an unprivileged user). Its own files in `/config`
+capabilities dropped except `CAP_DAC_OVERRIDE` (read and write any file),
+`CAP_CHOWN`, `CAP_FOWNER` and `CAP_FSETID` (restore owners and permissions
+exactly), and `CAP_SETUID` and `CAP_SETGID` (only to start program plugins as an
+unprivileged user). The entrypoint removes everything else from the bounding set
+and sets `no_new_privs`; CI checks the running process's capabilities.
+
+Amended 2026-10-16 while building phase 0.1: `CAP_DAC_READ_SEARCH` was listed
+at first, but Docker doesn't grant it by default and `CAP_DAC_OVERRIDE` already
+allows reading any file; `CAP_FSETID` was added so restores can put back
+set-group-ID permissions. Its own files in `/config`
 and `/backups` are owned by PUID:PGID. No privileged mode.
 
 ## Consequences

@@ -1,0 +1,11 @@
+**/node_modules
+**/.venv
+**/__pycache__
+**/.mypy_cache
+**/.pytest_cache
+**/.ruff_cache
+frontend/dist
+backend/.dev-config
+backend/.dev-backups
+.git
+LOCAL_NOTES.md

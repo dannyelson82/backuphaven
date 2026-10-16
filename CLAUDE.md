@@ -31,3 +31,23 @@ recorded in docs/adr/.
 - The owner is comfortable following steps but is not a command-line expert:
   when they must do something themselves, give exact numbered steps and explain
   what each does. Discuss design before big decisions.
+
+## Commands
+Backend (run in `backend/`):
+- Tests: `uv run pytest` (coverage: `uv run pytest --cov=backuphaven`)
+- Lint, format, types: `uv run ruff check . && uv run ruff format --check . && uv run mypy`
+- Auto-format: `uv run ruff format .`
+- Run the server: `uv run python -m backuphaven` (port 7272, config in `./.dev-config`,
+  backups in `./.dev-backups`; add `BACKUPHAVEN_WEB_DIR=../frontend/dist` to serve a built UI)
+
+Frontend (run in `frontend/`; Node is in `~/.local/opt/node/bin`):
+- Tests: `npm test`
+- Lint, format, types: `npm run lint && npm run format:check && npm run typecheck`
+- Auto-format: `npm run format`
+- Build: `npm run build`
+- Dev server with hot reload: `npm run dev` (port 5173, proxies `/api` to 7272)
+
+CI runs all of the above plus an image build and a container smoke test that also
+checks the running process keeps only the capabilities ADR-0006 allows
+(`.github/workflows/`). `uv` warns that `VIRTUAL_ENV=/lsiopy` is ignored; that
+comes from the code-server image and is harmless.

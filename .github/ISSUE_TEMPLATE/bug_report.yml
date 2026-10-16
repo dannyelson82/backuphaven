@@ -1,0 +1,32 @@
+name: Bug report
+description: Something isn't working
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+  - type: input
+    id: version
+    attributes:
+      label: BackupHaven version
+    validations:
+      required: true
+  - type: dropdown
+    id: gpu
+    attributes:
+      label: Encoder hardware
+      options: [NVIDIA, Intel, AMD, CPU only, Multiple]
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Remove any API keys, IPs or domains before pasting.
+      render: text

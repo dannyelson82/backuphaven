@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>BackupHaven</Name>
+  <Repository>ghcr.io/dannyelson82/backuphaven:latest</Repository>
+  <Registry>https://github.com/dannyelson82/backuphaven/pkgs/container/backuphaven</Registry>
+  <Network>bridge</Network>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/dannyelson82/backuphaven/issues</Support>
+  <Project>https://github.com/dannyelson82/backuphaven</Project>
+  <Overview>Simple, automated nightly backups for the apps on your Unraid server. BackupHaven backs up your containers' settings and data into one compressed file every night, checks every database inside it for damage, keeps a sensible history of backups, and makes restoring an app easy and reversible. Databases are copied while the apps run; stopping a container during its backup is a per-app choice. Support for each app comes from plugins.[br][br]Add every share that holds app data (for example appdata, or a cache-only share) using the SAME path on both sides.[br][br]Early test build: it doesn't back anything up yet.</Overview>
+  <Category>Backup: Tools:Utilities</Category>
+  <WebUI>http://[IP]:[PORT:7272]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/dannyelson82/backuphaven/main/unraid/backuphaven.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/dannyelson82/backuphaven/main/assets/icon.png</Icon>
+  <ExtraParams></ExtraParams>
+  <PostArgs></PostArgs>
+  <Requires></Requires>
+  <Config Name="Web UI Port" Target="7272" Default="7272" Mode="tcp" Description="Port for the BackupHaven web interface." Type="Port" Display="always" Required="true" Mask="false">7272</Config>
+  <Config Name="Config" Target="/config" Default="/mnt/user/appdata/backuphaven" Mode="rw" Description="BackupHaven's own settings, database and logs." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/backuphaven</Config>
+  <Config Name="Backups" Target="/backups" Default="/mnt/user/backups/backuphaven" Mode="rw" Description="Where the nightly backup files are written." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/backups/backuphaven</Config>
+  <Config Name="Unraid flash (read only)" Target="/boot" Default="/boot" Mode="ro" Description="Read only. BackupHaven reads your container templates here to find each app's data folders." Type="Path" Display="always" Required="true" Mask="false">/boot</Config>
+  <Config Name="Data share: appdata" Target="/mnt/user/appdata" Default="/mnt/user/appdata" Mode="rw" Description="A share that holds app data. Use the SAME path on both sides. Add one more Path like this for every other share with app data (for example a cache-only share)." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata</Config>
+  <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="Owner of the files BackupHaven creates (its settings and backups)." Type="Variable" Display="advanced" Required="true" Mask="false">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Group of the files BackupHaven creates." Type="Variable" Display="advanced" Required="true" Mask="false">100</Config>
+  <Config Name="UMASK" Target="UMASK" Default="022" Mode="" Description="Permissions mask for created files." Type="Variable" Display="advanced" Required="false" Mask="false">022</Config>
+  <Config Name="TZ" Target="TZ" Default="" Mode="" Description="Time zone for the nightly schedule, e.g. Europe/London. Unraid usually fills this in." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+</Container>

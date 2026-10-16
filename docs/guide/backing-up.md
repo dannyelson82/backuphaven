@@ -7,7 +7,11 @@ summary: Run a backup, read the Dashboard, and know what the results mean.
 # Backing up
 
 The page you see after logging in is the **Dashboard**. Anything that needs
-your attention is shown at the top.
+your attention is shown at the top: a missed or failed backup (with when the
+last good one was made), or an app on a share BackupHaven can't see. Below it,
+cards show how many apps are in the backup schedule, how many backups are kept
+and their size, the data shares, and the free space on the backups disk. Click
+the schedule or backups card to open that page.
 
 ## Run now
 
@@ -106,7 +110,9 @@ there, check its container and its folders.
 
 ## Database health
 
-The **Database health** table lists every database from the last backup:
+The **Database health** table shows the latest check of every database of the
+apps in the backup schedule (a **Choose apps…** test of one app doesn't hide the
+others):
 
 - **Healthy**: the copy was checked and is fine.
 - **quick check** next to it: the database uses features BackupHaven can't fully

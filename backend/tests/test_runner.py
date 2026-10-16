@@ -394,3 +394,27 @@ def test_backups_started_in_the_same_second_get_different_names() -> None:
     taken = {"backuphaven-2026-10-17T030000.tar.zst", "backuphaven-2026-10-17T030000-2.tar.zst"}
     assert archive_name(now) == "backuphaven-2026-10-17T030000.tar.zst"
     assert archive_name(now, taken.__contains__) == "backuphaven-2026-10-17T030000-3.tar.zst"
+
+
+def test_dashboard_totals_and_latest_health_of_each_scheduled_database(unraid: Settings) -> None:
+    app = create_app(unraid, gateways=frozenset())
+    with TestClient(app):
+        admin = admin_client(app)
+        admin.put(f"{API}/schedule/apps", json={"apps": ["Tool", "sonarr"]})
+        admin.post(f"{API}/runs")
+        for _ in range(200):
+            if not app.state.runner.running:
+                break
+            time.sleep(0.05)
+        # A test backup of one app afterwards doesn't hide the others' health.
+        admin.post(f"{API}/runs", json={"apps": ["Tool"]})
+        for _ in range(200):
+            if not app.state.runner.running:
+                break
+            time.sleep(0.05)
+        state = admin.get(f"{API}/status").json()
+        assert [(d["app"], d["path"]) for d in state["database_health"]] == [
+            ("sonarr", "sonarr.db"),
+            ("Tool", "state.sqlite"),
+        ]
+        assert state["backups_count"] == 2 and state["backups_bytes"] > 0

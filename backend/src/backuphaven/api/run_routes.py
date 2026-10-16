@@ -7,7 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from backuphaven import audit, discovery, schedule
 from backuphaven.api.deps import DbDep, InteractiveDep, csrf_protect, require_setup_done
@@ -103,6 +103,10 @@ class StatusView(BaseModel):
     templates_found: bool
     missing_shares: list[MissingShareView]
     backups_free_bytes: int | None
+    # Backup files kept, and their total size.
+    backups_count: int = 0
+    backups_bytes: int = 0
+    # The latest check of each database of the apps in the backup schedule.
     database_health: list[DbCheckView]
 
 
@@ -222,13 +226,17 @@ def get_status(request: Request, db: DbDep, _principal: InteractiveDep) -> Statu
         good = session.scalars(
             select(Run).where(Run.verified.is_(True)).order_by(Run.id.desc()).limit(1)
         ).first()
-        checks = (
-            session.scalars(
-                select(DbCheck).where(DbCheck.run_id == last.id).order_by(DbCheck.id)
-            ).all()
-            if last is not None
-            else []
-        )
+        kept = session.execute(
+            select(func.count(Run.id), func.coalesce(func.sum(Run.size), 0)).where(
+                Run.archive.is_not(None), Run.deleted_at.is_(None)
+            )
+        ).one()
+        wanted = {n.lower() for n in scheduled_apps}
+        latest: dict[tuple[str, str], DbCheck] = {}
+        for check in session.scalars(select(DbCheck).order_by(DbCheck.run_id.desc(), DbCheck.id)):
+            if check.app.lower() in wanted:
+                latest.setdefault((check.app.lower(), check.path), check)
+        checks = sorted(latest.values(), key=lambda c: (c.app.lower(), c.path))
     try:
         free: int | None = shutil.disk_usage(settings.backups_dir).free
     except OSError:
@@ -267,5 +275,7 @@ def get_status(request: Request, db: DbDep, _principal: InteractiveDep) -> Statu
             for m in a.missing
         ],
         backups_free_bytes=free,
+        backups_count=int(kept[0]),
+        backups_bytes=int(kept[1] or 0),
         database_health=[_db_view(c) for c in checks],
     )

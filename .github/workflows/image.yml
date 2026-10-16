@@ -63,6 +63,17 @@ jobs:
             -d '{"username":"admin","password":"smoke test password"}' http://127.0.0.1:7272/api/v1/setup >/dev/null
           curl -fsS -b "$jar" http://127.0.0.1:7272/api/v1/plugins | tee plugins.json | head -c 300; echo
           for id in generic sonarr radarr prowlarr plex backuphaven; do grep -q "\"id\":\"$id\"" plugins.json; done
+          # A real (empty) backup run: written, verified, owned by PUID:PGID, 0600.
+          curl -fsS -b "$jar" -H "X-CSRF-Token: $csrf" -X POST http://127.0.0.1:7272/api/v1/runs
+          for _ in $(seq 1 30); do
+            curl -fsS -b "$jar" http://127.0.0.1:7272/api/v1/runs/1 > run.json
+            grep -q '"status":"running"' run.json || break
+            sleep 1
+          done
+          cat run.json; echo
+          grep -q '"verified":true' run.json
+          docker exec bh sh -c 'stat -c "%u:%g %a %n" /backups/backuphaven-*.tar.zst*' | tee archive.txt
+          test "$(grep -c '^99:100 600 ' archive.txt)" = 2
           # Root inside the container, but only the capabilities ADR-0006 allows:
           # chown, dac_override, fowner, fsetid, setgid, setuid = 0xdb; no new privileges.
           docker exec bh sh -c 'for p in /proc/[0-9]*; do

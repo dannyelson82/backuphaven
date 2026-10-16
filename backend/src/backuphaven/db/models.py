@@ -5,11 +5,13 @@ from typing import Any, ClassVar
 
 from sqlalchemy import (
     JSON,
+    Enum,
     ForeignKey,
     Index,
     Integer,
     MetaData,
     String,
+    Text,
     true,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -79,3 +81,55 @@ class AuditLog(Base):
     action: Mapped[str] = mapped_column(String(64))
     target: Mapped[str | None] = mapped_column(String(512), default=None)
     detail: Mapped[dict[str, Any] | None] = mapped_column(default=None)
+
+
+RUN_STATUSES = ("running", "ok", "warning", "failed")
+
+
+class Run(Base):
+    """One backup run (ARCHITECTURE.md §8): one archive."""
+
+    __tablename__ = "runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    trigger: Mapped[str] = mapped_column(String(16))  # "manual" | "schedule"
+    started_at: Mapped[datetime] = mapped_column(default=utcnow, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(default=None)
+    status: Mapped[str] = mapped_column(Enum(*RUN_STATUSES, name="run_status"))
+    archive: Mapped[str | None] = mapped_column(String(255), default=None)  # file name
+    size: Mapped[int | None] = mapped_column(Integer, default=None)
+    verified: Mapped[bool] = mapped_column(default=False)
+    error: Mapped[str | None] = mapped_column(Text, default=None)
+    summary: Mapped[dict[str, Any] | None] = mapped_column(default=None)
+
+
+class RunApp(Base):
+    """One app's part of a run."""
+
+    __tablename__ = "run_apps"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), index=True)
+    app: Mapped[str] = mapped_column(String(255))
+    plugin: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(Enum(*RUN_STATUSES, name="run_app_status"))
+    files: Mapped[int] = mapped_column(Integer, default=0)
+    bytes: Mapped[int] = mapped_column(Integer, default=0)
+    seconds: Mapped[float] = mapped_column(default=0.0)
+    problems: Mapped[dict[str, Any] | None] = mapped_column(default=None)  # errors, warnings
+
+
+class DbCheck(Base):
+    """A database's snapshot and check in a run."""
+
+    __tablename__ = "db_checks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), index=True)
+    app: Mapped[str] = mapped_column(String(255), index=True)
+    path: Mapped[str] = mapped_column(String(1024))  # relative to the app's folder
+    status: Mapped[str] = mapped_column(String(16))  # ok | damaged | unchecked | failed
+    mode: Mapped[str | None] = mapped_column(String(8), default=None)  # full | quick
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    seconds: Mapped[float] = mapped_column(default=0.0)
+    messages: Mapped[dict[str, Any] | None] = mapped_column(default=None)

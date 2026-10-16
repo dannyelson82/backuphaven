@@ -11,10 +11,9 @@ import pytest
 from backuphaven import retention
 from backuphaven.config import Settings
 from backuphaven.db import Database, Restore
-from backuphaven.plugins.registry import bundled
 from backuphaven.restore import ASIDE_DIR, RestoreError, Restorer, changing_files
 from backuphaven.runner import Runner
-from tests.test_runner import db, unraid  # noqa: F401 - fixtures
+from tests.test_runner import db, plugins_of, unraid  # noqa: F401 - fixtures
 
 
 def tree(root: Path) -> dict[str, bytes | str]:
@@ -32,9 +31,11 @@ def tree(root: Path) -> dict[str, bytes | str]:
 def backed_up(unraid: Settings, db: Database) -> tuple[Runner, Restorer, int]:
     with db.write() as session:
         retention.save_settings(session, retention.KeepingSettings(min_free_gb=0))
-    runner = Runner(db, unraid, bundled())
+    runner = Runner(db, unraid, plugins_of(unraid))
     run_id = runner.run_now(only=["Tool", "plex", "sonarr"], scheduled=True)
-    restorer = Restorer(db, unraid, bundled(), runner.lock, quiet_seconds=0, sleep=lambda _s: None)
+    restorer = Restorer(
+        db, unraid, plugins_of(unraid), runner.lock, quiet_seconds=0, sleep=lambda _s: None
+    )
     return runner, restorer, run_id
 
 
@@ -113,7 +114,7 @@ def test_an_app_that_is_still_running_is_refused_and_nothing_moves(
         (tool / "settings.json").write_text(f'{{"tick": {datetime.now(UTC).timestamp()}}}')
 
     restorer = Restorer(
-        db, unraid, bundled(), runner.lock, quiet_seconds=0, sleep=app_keeps_writing
+        db, unraid, plugins_of(unraid), runner.lock, quiet_seconds=0, sleep=app_keeps_writing
     )
     assert restorer.check(run_id, "Tool")["stopped"] is False
     restore_id = restorer.run(run_id, "Tool")
@@ -192,7 +193,7 @@ def test_a_backup_never_writes_into_data_shares(unraid: Settings, db: Database) 
         return out
 
     before = snapshot()
-    Runner(db, unraid, bundled()).run_now(only=["Tool", "plex", "sonarr"], scheduled=True)
+    Runner(db, unraid, plugins_of(unraid)).run_now(only=["Tool", "plex", "sonarr"], scheduled=True)
     assert snapshot() == before
 
 

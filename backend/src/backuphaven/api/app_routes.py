@@ -32,7 +32,10 @@ class LastBackupView(BaseModel):
 class AppView(BaseModel):
     name: str
     image: str
-    plugin: str
+    # None: no plugin yet, so the app can't be backed up (ADR-0013).
+    plugin: str | None
+    plugin_name: str | None = None
+    plugin_local: bool = False
     folders: list[DataFolderView]
     missing: list[DataFolderView]
     # In the backup schedule (ADR-0011).
@@ -76,15 +79,16 @@ def _last_backups(db: DbDep) -> dict[str, LastBackupView]:
 def discovered(request: Request, db: DbDep, _principal: InteractiveDep) -> DiscoveryView:
     settings: Settings = request.app.state.settings
     apps = discovery.discover(settings.templates_dir, settings.data_root)
-    known = registry.bundled()
+    known: registry.PluginSource = request.app.state.plugins
     with db.read() as session:
         scheduled = schedule.load_apps(session)
     in_schedule = {n.lower() for n in scheduled}
     last = _last_backups(db)
-    apps = [
-        discovery.with_plugin_shares(app, known.match(app.image).backup.share_folders)
-        for app in apps
-    ]
+    pairs = []
+    for found in apps:
+        plugin = known.match(found.image)
+        app = discovery.with_plugin_shares(found, plugin.backup.share_folders) if plugin else found
+        pairs.append((app, plugin))
     return DiscoveryView(
         data_shares=sorted(discovery.mounted_data_shares(settings.data_root)),
         templates_found=settings.templates_dir.is_dir(),
@@ -93,14 +97,16 @@ def discovered(request: Request, db: DbDep, _principal: InteractiveDep) -> Disco
             AppView(
                 name=app.name,
                 image=app.image,
-                plugin=known.match(app.image).id,
+                plugin=plugin.id if plugin else None,
+                plugin_name=plugin.name if plugin else None,
+                plugin_local=plugin is not None and plugin.id in known.local,
                 folders=[DataFolderView(**vars(f)) for f in app.folders],
                 missing=[DataFolderView(**vars(m)) for m in app.missing],
                 scheduled=app.name.lower() in in_schedule,
                 not_installed=not_installed(settings.data_root, app),
                 last_backup=last.get(app.name.lower()),
             )
-            for app in apps
+            for app, plugin in pairs
         ],
     )
 
@@ -119,10 +125,15 @@ def get_schedule_apps(db: DbDep, _principal: InteractiveDep) -> ScheduleApps:
 def put_schedule_apps(
     body: ScheduleApps, request: Request, db: DbDep, principal: InteractiveDep
 ) -> ScheduleApps:
-    """Replace the list. Apps being added must exist; names already in the list may
-    stay even if their template is gone (they show as skipped in runs)."""
+    """Replace the list. Apps being added must exist and have a plugin (ADR-0013);
+    names already in the list may stay even if their template is gone (they show as
+    skipped in runs)."""
     settings: Settings = request.app.state.settings
-    found = {a.name.lower() for a in discovery.discover(settings.templates_dir, settings.data_root)}
+    known: registry.PluginSource = request.app.state.plugins
+    apps = {
+        a.name.lower(): a for a in discovery.discover(settings.templates_dir, settings.data_root)
+    }
+    found = set(apps)
     with db.write() as session:
         before = schedule.load_apps(session)
         kept = {n.lower() for n in before}
@@ -130,6 +141,17 @@ def put_schedule_apps(
         if unknown:
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_CONTENT, "not found: " + ", ".join(unknown)
+            )
+        no_plugin = [
+            n
+            for n in body.apps
+            if n.lower() not in kept
+            and n.lower() in apps
+            and known.match(apps[n.lower()].image) is None
+        ]
+        if no_plugin:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT, "no plugin yet: " + ", ".join(no_plugin)
             )
         saved = schedule.save_apps(session, body.apps)
         added = sorted(set(saved) - set(before), key=str.lower)
@@ -153,6 +175,7 @@ class SettingView(BaseModel):
 
 
 class PluginView(BaseModel):
+    local: bool = False  # from the local plugins folder, not part of a release
     id: str
     name: str
     version: str
@@ -162,7 +185,8 @@ class PluginView(BaseModel):
 
 
 @router.get("/plugins")
-def plugins(_principal: InteractiveDep) -> list[PluginView]:
+def plugins(request: Request, _principal: InteractiveDep) -> list[PluginView]:
+    known: registry.PluginSource = request.app.state.plugins
     return [
         PluginView(
             id=m.id,
@@ -170,10 +194,11 @@ def plugins(_principal: InteractiveDep) -> list[PluginView]:
             version=m.version,
             description=m.description,
             mode=m.backup.mode,
+            local=m.id in known.local,
             settings=[
                 SettingView(id=s.id, label=s.label, help=s.help, default=s.default)
                 for s in m.settings
             ],
         )
-        for m in registry.bundled().plugins.values()
+        for m in known.plugins.values()
     ]

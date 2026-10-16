@@ -8,7 +8,7 @@ from backuphaven.plugins import fixture
 from backuphaven.plugins.registry import bundled
 
 FIXTURES = Path(__file__).parent / "plugin_fixtures"
-PLUGINS = sorted(p for p in bundled().plugins if p != "generic")
+PLUGINS = sorted(bundled().plugins)
 
 
 @pytest.mark.parametrize("plugin_id", PLUGINS)

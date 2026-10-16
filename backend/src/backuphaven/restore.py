@@ -34,13 +34,12 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from backuphaven import discovery, unpack
-from backuphaven.archive import folder_key
+from backuphaven import unpack
 from backuphaven.config import Settings
 from backuphaven.db import Database, Restore, Run
 from backuphaven.db.types import utcnow
 from backuphaven.plugins.manifest import Manifest
-from backuphaven.plugins.registry import Registry
+from backuphaven.plugins.registry import PluginSource
 from backuphaven.retention import is_ours
 from backuphaven.selection import (
     SIDECARS,
@@ -106,25 +105,7 @@ def _app_record(manifest: dict[str, Any], app: str) -> dict[str, Any]:
     raise RestoreError(f"{app} isn't in this backup")
 
 
-def _folders_from_template(
-    archive: Path, manifest: dict[str, Any], key: str, settings: Settings
-) -> list[dict[str, str]]:
-    """Older backups don't list their folders: read them from the template in the
-    backup (the container's paths as they were when it was made)."""
-    name = f"apps/{key}/template.xml"
-    for info, data in unpack.members(archive):
-        if info.name == name and data is not None:
-            template = discovery.parse_template(data.read(1 << 20).decode("utf-8", "replace"))
-            shares = discovery.mounted_data_shares(settings.data_root)
-            app = discovery.discover_app(template, shares)
-            return [
-                {"key": folder_key(f.target), "target": f.target, "host": f.host}
-                for f in app.folders
-            ]
-    return []
-
-
-def plan(db: Database, settings: Settings, registry: Registry, run_id: int, app: str) -> Plan:
+def plan(db: Database, settings: Settings, registry: PluginSource, run_id: int, app: str) -> Plan:
     with db.read() as session:
         run = session.get(Run, run_id)
     if run is None or run.archive is None or run.deleted_at is not None or not is_ours(run.archive):
@@ -142,9 +123,11 @@ def plan(db: Database, settings: Settings, registry: Registry, run_id: int, app:
         raise RestoreError(
             f"the {record.get('plugin')} plugin that made this backup isn't installed"
         )
-    folders = record.get("folders") or _folders_from_template(archive, manifest, key, settings)
+    folders = record.get("folders")
     if not folders:
-        raise RestoreError(f"the backup doesn't say where {app}'s folders go")
+        raise RestoreError(
+            f"this backup doesn't say where {app}'s folders go (made by an older version)"
+        )
     stored = {e["path"] for e in manifest.get("entries", [])}
     plans: list[FolderPlan] = []
     for folder in folders:
@@ -188,7 +171,7 @@ def plan(db: Database, settings: Settings, registry: Registry, run_id: int, app:
     )
 
 
-def _share_folders(registry: Registry, record: dict[str, Any]) -> list[str]:
+def _share_folders(registry: PluginSource, record: dict[str, Any]) -> list[str]:
     plugin = registry.plugins.get(str(record.get("plugin")))
     return list(plugin.backup.share_folders) if plugin is not None else []
 
@@ -299,7 +282,7 @@ class Restorer:
         self,
         db: Database,
         settings: Settings,
-        registry: Registry,
+        registry: PluginSource,
         lock: threading.Lock,
         quiet_seconds: float = QUIET_SECONDS,
         sleep: Callable[[float], None] = time.sleep,

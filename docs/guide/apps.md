@@ -33,6 +33,12 @@ install them.
 **Restore…** (once an app has been backed up) puts its files back from a
 backup you choose; see [Restoring an app](restore.md).
 
+## Apps marked "No plugin yet"
+
+BackupHaven backs an app up only with a plugin made for it (see
+[Plugins](plugins.md)). Apps without one show **No plugin yet**, and **Add to
+backup schedule** can't be pressed for them.
+
 ## Apps marked "Not installed"
 
 Unraid keeps the template of every container you have ever installed, so the

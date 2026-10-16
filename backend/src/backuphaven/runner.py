@@ -25,7 +25,7 @@ from backuphaven.db import Database, DbCheck, Run, RunApp
 from backuphaven.db.types import utcnow
 from backuphaven.diagnostics import Diagnostics
 from backuphaven.plugins.manifest import Manifest
-from backuphaven.plugins.registry import Registry
+from backuphaven.plugins.registry import PluginSource
 from backuphaven.selection import OutsideShareError, effective_rules, resolve_app_folder, select
 from backuphaven.sqlite_tools import SnapshotError, check, snapshot
 
@@ -183,7 +183,7 @@ class Runner:
         self,
         db: Database,
         settings: Settings,
-        registry: Registry,
+        registry: PluginSource,
         diagnostics: Diagnostics | None = None,
     ) -> None:
         self._db = db
@@ -257,10 +257,13 @@ class Runner:
             return
         if not only:
             raise NoSuchAppsError("choose at least one app")
-        found = {a.name.lower() for a in discovery.discover(*self._discovery_dirs())}
-        unknown = [n for n in only if n.lower() not in found]
+        apps = {a.name.lower(): a for a in discovery.discover(*self._discovery_dirs())}
+        unknown = [n for n in only if n.lower() not in apps]
         if unknown:
             raise NoSuchAppsError("not found: " + ", ".join(unknown))
+        no_plugin = [n for n in only if self._registry.match(apps[n.lower()].image) is None]
+        if no_plugin:
+            raise NoSuchAppsError("no plugin yet: " + ", ".join(no_plugin))
 
     def _discovery_dirs(self) -> tuple[Path, Path]:
         return self._settings.templates_dir, self._settings.data_root
@@ -438,6 +441,12 @@ class Runner:
     ) -> AppResult:
         started = time.monotonic()
         plugin = self._registry.match(app.image)
+        if plugin is None:  # plugins only (ADR-0013)
+            result = AppResult(name=app.name, plugin="-", key=key)
+            result.error(
+                f"no plugin for {app.image}: this app isn't backed up. Make one from the Apps page"
+            )
+            return result
         app = discovery.with_plugin_shares(app, plugin.backup.share_folders)
         result = AppResult(name=app.name, plugin=plugin.id, key=key)
         logger.debug(
@@ -481,6 +490,15 @@ class Runner:
                 result.error(f"no data folder mapped to {plugin.backup.folder}")
             else:
                 result.warn("no data folders on the data shares")
+        # Completeness (ADR-0013): every data folder of the app is the plugin's job.
+        chosen_hosts = [PurePosixPath(f.host) for f in folders]
+        for f in app.folders:
+            host = PurePosixPath(f.host)
+            if not any(host == c or host.is_relative_to(c) for c in chosen_hosts):
+                result.warn(
+                    f"{f.target} ({f.host}) isn't covered by the {plugin.name} plugin, "
+                    "so it isn't backed up"
+                )
         # Files the plugin expects may be in any of the app's folders.
         missing_everywhere: set[str] | None = None
         for folder in folders:

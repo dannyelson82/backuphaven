@@ -91,6 +91,16 @@ function AppRow({
                 In the backup schedule
               </Badge>
             )}
+            {app.plugin === null && (
+              <Badge variant="light" color="orange">
+                No plugin yet
+              </Badge>
+            )}
+            {app.plugin_local && (
+              <Badge variant="light" color="blue" title="From the local plugins folder">
+                Local plugin
+              </Badge>
+            )}
             {app.not_installed && (
               <Badge variant="light" color="gray">
                 Not installed
@@ -103,7 +113,7 @@ function AppRow({
             )}
           </Group>
           <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
-            Plugin {app.plugin}
+            {app.plugin === null ? app.image : `Plugin ${app.plugin_name ?? app.plugin}`}
             {app.folders.length > 0 && ` · ${app.folders.map((f) => f.host).join(', ')}`}
           </Text>
           {app.missing.length > 0 && (
@@ -130,6 +140,12 @@ function AppRow({
             variant={app.scheduled ? 'default' : 'filled'}
             onClick={onToggle}
             loading={busy}
+            disabled={!app.scheduled && app.plugin === null}
+            title={
+              !app.scheduled && app.plugin === null
+                ? 'BackupHaven needs a plugin for this app before it can back it up'
+                : undefined
+            }
           >
             {app.scheduled ? 'Remove' : 'Add to backup schedule'}
           </Button>

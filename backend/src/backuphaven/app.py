@@ -29,7 +29,7 @@ from backuphaven.db.types import utcnow
 from backuphaven.diagnostics import SETTING_KEY, Diagnostics
 from backuphaven.headers import SecurityHeadersMiddleware
 from backuphaven.middleware import RequestLogMiddleware
-from backuphaven.plugins.registry import bundled
+from backuphaven.plugins.registry import LOCAL_DIR_NAME, PluginStore
 from backuphaven.restore import Restorer
 from backuphaven.runner import Runner, remove_leftovers
 from backuphaven.scheduler import Scheduler
@@ -102,9 +102,10 @@ def create_app(
     app.state.gateways = read_default_gateways() if gateways is None else gateways
     app.state.gateway_seen_at = None
     app.state.diagnostics = diagnostics
-    app.state.runner = Runner(db, settings, bundled(), diagnostics)
+    app.state.plugins = PluginStore(settings.config_dir / LOCAL_DIR_NAME)
+    app.state.runner = Runner(db, settings, app.state.plugins, diagnostics)
     app.state.restorer = Restorer(
-        db, settings, bundled(), app.state.runner.lock, settings.restore_quiet_s
+        db, settings, app.state.plugins, app.state.runner.lock, settings.restore_quiet_s
     )
     app.state.scheduler = Scheduler(
         db, app.state.runner, settings, housekeeping=app.state.restorer.expire

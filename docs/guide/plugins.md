@@ -11,14 +11,19 @@ hold the app's settings and databases, what can be skipped (logs, caches,
 pictures the app downloads again), and how to restore the app.
 
 Each container is matched to a plugin by its image name, for example
-`lscr.io/linuxserver/sonarr` uses the Sonarr plugin. Containers without their
-own plugin use **Any app**, so nothing is left unprotected.
+`lscr.io/linuxserver/sonarr` uses the Sonarr plugin. **An app is backed up only
+by a plugin made for it.** A plugin promises a complete copy: restoring it brings
+the app back in working order. Apps without one are marked **No plugin yet** on
+the Apps page and can't be added to the backup schedule.
+
+Every backup also checks the plugin's work: a data folder of the app that the
+plugin doesn't cover is reported on the app's result (**Warnings**), so nothing
+goes missing quietly.
 
 ## Included plugins
 
 | Plugin | Backs up | Skips by default | Settings |
 |---|---|---|---|
-| **Any app** | Every data folder of the app. Databases are found automatically and checked. | Caches, logs, temporary and transcode folders | **Include logs** |
 | **Sonarr**, **Radarr** | Settings (`config.xml`), the database, security keys | Logs, posters (`MediaCover`), the app's own backup zips | **Include posters**, **Include … own backups** |
 | **Prowlarr** | Settings, the database, indexer definitions | Logs, the app's own backup zips | **Include Prowlarr's own backups** |
 | **Plex Media Server** | Settings (`Preferences.xml`) and the databases: libraries, watch history, play positions | Posters, thumbnails, caches, logs, Plex's own dated database copies | **Include posters and metadata (large)** |
@@ -62,6 +67,15 @@ Other database servers (PostgreSQL, MariaDB/MySQL) found in an app's folders
 can't be copied safely while the app runs. The backup marks that app
 **Warnings** and says so; keep the app's own database dumps until stop mode
 arrives.
+
+## Trying a plugin before it's released
+
+Put a plugin file (`<name>.yaml`) in the `plugins` folder inside BackupHaven's
+appdata folder, usually `/mnt/user/appdata/backuphaven/plugins/`. BackupHaven
+picks it up straight away, without a restart, and marks the app **Local
+plugin**. A local plugin with the same name as an included one replaces it, so an
+improved plugin can be tried too. Files that aren't valid plugins are ignored and
+logged.
 
 Coming later: plugins written by other people, installed from a catalog, each
 with the permissions you approve.

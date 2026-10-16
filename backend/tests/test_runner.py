@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from backuphaven.app import create_app
 from backuphaven.config import Settings
 from backuphaven.db import Database, DbCheck, Run, RunApp
-from backuphaven.plugins.registry import bundled
+from backuphaven.plugins.registry import PluginStore
 from backuphaven.runner import NoSuchAppsError, Runner, remove_leftovers
 from tests.helpers import API, admin_client
 from tests.test_discovery import template_xml
@@ -35,6 +35,36 @@ def make_db(path: Path, rows: int = 50, keep_open: bool = False) -> sqlite3.Conn
 def write(path: Path, text: str = "x") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
+
+
+TOOL_PLUGIN = """
+id: tool
+name: Tool
+version: 1.0.0
+kind: app
+plugin_api: 1
+author: tests
+recognise: {images: ["someone/tool"]}
+backup:
+  folder: /data/config
+  databases: auto
+  include: ["**"]
+"""
+ELSEWHERE_PLUGIN = """
+id: elsewhere
+name: Elsewhere
+version: 1.0.0
+kind: app
+plugin_api: 1
+author: tests
+recognise: {images: ["someone/x"]}
+backup: {folder: /config, include: ["**"]}
+"""
+
+
+def plugins_of(settings: Settings) -> PluginStore:
+    """Bundled plugins plus the test server's local ones."""
+    return PluginStore(settings.config_dir / "plugins")
 
 
 @pytest.fixture
@@ -72,7 +102,11 @@ def unraid(tmp_path: Path) -> Settings:
     write(pms / "Cache" / "huge.bin", "cache")
     make_db(root / "appdata" / "tool" / "state.sqlite")
     write(root / "appdata" / "tool" / "settings.json", "{}")
-    (root / "media" / "tv").mkdir(parents=True)
+    # Plugins only (ADR-0013): the made-up apps get local plugins of their own.
+    local = tmp_path / "config" / "plugins"
+    local.mkdir(parents=True)
+    (local / "tool.yaml").write_text(TOOL_PLUGIN)
+    (local / "elsewhere.yaml").write_text(ELSEWHERE_PLUGIN)
     return Settings(
         config_dir=tmp_path / "config",
         backups_dir=tmp_path / "backups",
@@ -101,7 +135,7 @@ def contents(archive: Path) -> dict[str, bytes]:
 
 
 def test_a_full_run(unraid: Settings, db: Database, tmp_path: Path) -> None:
-    run_id = Runner(db, unraid, bundled()).run_now()
+    run_id = Runner(db, unraid, plugins_of(unraid)).run_now()
     with db.read() as session:
         run = session.get(Run, run_id)
         apps = {a.app: a for a in session.query(RunApp).filter_by(run_id=run_id)}
@@ -112,7 +146,7 @@ def test_a_full_run(unraid: Settings, db: Database, tmp_path: Path) -> None:
     assert apps["elsewhere"].status == "warning"
     assert "'other' share" in apps["elsewhere"].problems["warnings"][0]  # type: ignore[index]
     assert {apps[n].status for n in ("sonarr", "plex", "Tool")} == {"ok"}
-    assert {apps[n].plugin for n in ("sonarr", "plex", "Tool")} == {"sonarr", "plex", "generic"}
+    assert {apps[n].plugin for n in ("sonarr", "plex", "Tool")} == {"sonarr", "plex", "tool"}
 
     archive = unraid.backups_dir / run.archive
     assert oct(archive.stat().st_mode & 0o777) == "0o600"
@@ -154,7 +188,7 @@ def test_a_running_apps_latest_changes_are_included(unraid: Settings, db: Databa
     con.execute("INSERT INTO t VALUES ('newest')")
     con.commit()
     try:
-        run_id = Runner(db, unraid, bundled()).run_now()
+        run_id = Runner(db, unraid, plugins_of(unraid)).run_now()
     finally:
         con.close()
     with db.read() as session:
@@ -175,7 +209,7 @@ def test_a_damaged_database_fails_its_app_but_keeps_the_archive(
     data = bytearray(broken.read_bytes())
     data[4096 * 3 : 4096 * 3 + 100] = b"\xff" * 100
     broken.write_bytes(bytes(data))
-    run_id = Runner(db, unraid, bundled()).run_now()
+    run_id = Runner(db, unraid, plugins_of(unraid)).run_now()
     with db.read() as session:
         run = session.get(Run, run_id)
         tool = session.query(RunApp).filter_by(run_id=run_id, app="Tool").one()
@@ -187,7 +221,7 @@ def test_a_damaged_database_fails_its_app_but_keeps_the_archive(
 
 def test_low_disk_space_stops_before_writing(unraid: Settings, db: Database) -> None:
     settings = unraid.model_copy(update={"min_free_bytes": 1 << 60})
-    run_id = Runner(db, settings, bundled()).run_now()
+    run_id = Runner(db, settings, plugins_of(unraid)).run_now()
     with db.read() as session:
         run = session.get(Run, run_id)
     assert run is not None and run.status == "failed" and run.archive is None
@@ -216,7 +250,7 @@ def test_run_now_api_and_status(unraid: Settings) -> None:
         assert {a["app"] for a in detail["apps"]} == {"elsewhere", "plex", "sonarr", "Tool"}
         state = admin.get(f"{API}/status").json()
         assert state["last_good_run"]["id"] == run_id
-        assert state["data_shares"] == ["appdata", "fast", "media"]
+        assert state["data_shares"] == ["appdata", "fast"]
         assert state["missing_shares"] == [
             {"app": "elsewhere", "target": "/config", "share": "other"}
         ]
@@ -226,7 +260,7 @@ def test_run_now_api_and_status(unraid: Settings) -> None:
 
 
 def test_only_one_run_at_a_time(unraid: Settings, db: Database) -> None:
-    runner = Runner(db, unraid, bundled())
+    runner = Runner(db, unraid, plugins_of(unraid))
     with runner._lock:  # as if a run were going
         assert runner.start("manual") is None
 
@@ -242,7 +276,7 @@ def test_runs_cut_off_by_a_restart_are_marked_failed(unraid: Settings, db: Datab
 
 
 def test_run_now_for_chosen_apps_only(unraid: Settings, db: Database) -> None:
-    run_id = Runner(db, unraid, bundled()).run_now(only=["Sonarr", "Tool"])
+    run_id = Runner(db, unraid, plugins_of(unraid)).run_now(only=["Sonarr", "Tool"])
     with db.read() as session:
         run = session.get(Run, run_id)
         apps = [a.app for a in session.query(RunApp).filter_by(run_id=run_id)]
@@ -255,7 +289,7 @@ def test_run_now_for_chosen_apps_only(unraid: Settings, db: Database) -> None:
 
 
 def test_run_now_rejects_apps_that_arent_there(unraid: Settings, db: Database) -> None:
-    runner = Runner(db, unraid, bundled())
+    runner = Runner(db, unraid, plugins_of(unraid))
     with pytest.raises(NoSuchAppsError, match="nothere"):
         runner.run_now(only=["sonarr", "nothere"])
     with pytest.raises(NoSuchAppsError):
@@ -272,7 +306,7 @@ class _CancelDuringFirstApp(Runner):
 
 
 def test_cancel_stops_the_run_and_leaves_nothing_behind(unraid: Settings, db: Database) -> None:
-    runner = _CancelDuringFirstApp(db, unraid, bundled())
+    runner = _CancelDuringFirstApp(db, unraid, plugins_of(unraid))
     run_id = runner.run_now()
     with db.read() as session:
         run = session.get(Run, run_id)
@@ -320,9 +354,9 @@ def test_leftovers_of_an_interrupted_run_are_removed_at_start(unraid: Settings) 
 def test_an_app_whose_folder_is_gone_is_skipped_not_failed(unraid: Settings, db: Database) -> None:
     """Unraid keeps the template of a removed container (ADR-0011)."""
     (unraid.templates_dir / "my-old.xml").write_text(
-        template_xml("old", "someone/old", ("/config", "/mnt/user/appdata/old", "rw"))
+        template_xml("old", "someone/x", ("/config", "/mnt/user/appdata/old", "rw"))
     )
-    run_id = Runner(db, unraid, bundled()).run_now(only=["old", "Tool"])
+    run_id = Runner(db, unraid, plugins_of(unraid)).run_now(only=["old", "Tool"])
     with db.read() as session:
         run = session.get(Run, run_id)
         apps = {a.app: a for a in session.query(RunApp).filter_by(run_id=run_id)}
@@ -428,3 +462,38 @@ def test_a_folder_inside_another_is_stored_once() -> None:
     metadata = DataFolder("/metadata", "/mnt/user/appdata/abs/metadata", "appdata")
     other = DataFolder("/data", "/mnt/user/appdata/abs-data", "appdata")
     assert _nested_once([config, metadata, other]) == [config, other]
+
+
+def test_apps_without_a_plugin_can_not_be_scheduled_or_backed_up(unraid: Settings) -> None:
+    (unraid.templates_dir / "my-mystery.xml").write_text(
+        template_xml("mystery", "someone/mystery", ("/config", "/mnt/user/appdata/mystery", "rw"))
+    )
+    write(unraid.data_root / "appdata" / "mystery" / "data.json", "{}")
+    app = create_app(unraid, gateways=frozenset())
+    with TestClient(app):
+        admin = admin_client(app)
+        found = {a["name"]: a for a in admin.get(f"{API}/apps/discovered").json()["apps"]}
+        assert found["mystery"]["plugin"] is None
+        assert found["Tool"]["plugin"] == "tool" and found["Tool"]["plugin_local"] is True
+        refused = admin.put(f"{API}/schedule/apps", json={"apps": ["mystery"]})
+        assert refused.status_code == 422 and "no plugin yet" in refused.json()["detail"]
+        chosen = admin.post(f"{API}/runs", json={"apps": ["mystery"]})
+        assert chosen.status_code == 422 and "no plugin yet" in chosen.json()["detail"]
+
+
+def test_data_folders_a_plugin_does_not_cover_are_reported(unraid: Settings, db: Database) -> None:
+    (unraid.templates_dir / "my-sonarr.xml").write_text(
+        template_xml(
+            "sonarr",
+            "lscr.io/linuxserver/sonarr",
+            ("/config", "/mnt/cache/fast/sonarr", "rw"),
+            ("/scripts", "/mnt/user/appdata/sonarr-scripts", "rw"),
+        )
+    )
+    write(unraid.data_root / "appdata" / "sonarr-scripts" / "hook.sh", "echo")
+    run_id = Runner(db, unraid, plugins_of(unraid)).run_now(only=["sonarr"], scheduled=True)
+    with db.read() as session:
+        app = session.query(RunApp).filter_by(run_id=run_id).one()
+    assert app.status == "warning"
+    warnings = (app.problems or {}).get("warnings", [])
+    assert "/scripts (/mnt/user/appdata/sonarr-scripts) isn't covered" in warnings[0]

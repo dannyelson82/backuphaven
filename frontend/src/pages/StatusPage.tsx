@@ -125,12 +125,15 @@ function ChooseApps({
                     key={app.name}
                     value={app.name}
                     label={app.name}
+                    disabled={app.plugin === null}
                     description={
-                      app.folders.length === 0
-                        ? app.missing.length
-                          ? `on the ${app.missing[0].share} share, which BackupHaven can't see`
-                          : 'no app data to back up'
-                        : undefined
+                      app.plugin === null
+                        ? 'no plugin yet'
+                        : app.folders.length === 0
+                          ? app.missing.length
+                            ? `on the ${app.missing[0].share} share, which BackupHaven can't see`
+                            : 'no app data to back up'
+                          : undefined
                     }
                   />
                 ))}

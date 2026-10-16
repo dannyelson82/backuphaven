@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     # Diagnostics files (Settings → Developer); None: /diagnostics if mapped,
     # otherwise <config>/diagnostics.
     diagnostics_dir: Path | None = None
+    # Time zone for the nightly schedule (Unraid passes TZ to every container).
+    tz: str = Field(default="Etc/UTC", validation_alias="TZ")
 
     @property
     def log_dir(self) -> Path:

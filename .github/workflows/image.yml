@@ -44,7 +44,18 @@ jobs:
       - name: Smoke test
         run: |
           set -eu
-          docker run -d --name bh -p 7272:7272 backuphaven:ci
+          # A pretend Unraid: one app template on the flash drive, its data on a share.
+          mkdir -p smoke/templates smoke/appdata/demo
+          printf '%s\n' '<?xml version="1.0"?>' '<Container version="2">' \
+            '  <Name>demo</Name><Repository>example/demo</Repository>' \
+            '  <Config Name="Config" Target="/config" Default="/mnt/user/appdata/demo" Mode="rw" Type="Path">/mnt/user/appdata/demo</Config>' \
+            '</Container>' > smoke/templates/my-demo.xml
+          echo '{"setting": true}' > smoke/appdata/demo/settings.json
+          sudo chown -R 99:100 smoke/appdata
+          docker run -d --name bh -p 7272:7272 \
+            -v "$PWD/smoke/templates:/boot/config/plugins/dockerMan/templates-user:ro" \
+            -v "$PWD/smoke/appdata:/mnt/user/appdata" \
+            backuphaven:ci
           for _ in $(seq 1 30); do
             status="$(docker inspect -f '{{.State.Health.Status}}' bh)"
             [ "$status" = healthy ] && break
@@ -63,7 +74,12 @@ jobs:
             -d '{"username":"admin","password":"smoke test password"}' http://127.0.0.1:7272/api/v1/setup >/dev/null
           curl -fsS -b "$jar" http://127.0.0.1:7272/api/v1/plugins | tee plugins.json | head -c 300; echo
           for id in generic sonarr radarr prowlarr plex backuphaven; do grep -q "\"id\":\"$id\"" plugins.json; done
-          # A real (empty) backup run: written, verified, owned by PUID:PGID, 0600.
+          # Nothing is backed up until an app is in the backup schedule (ADR-0011).
+          test "$(curl -s -o /dev/null -w '%{http_code}' -b "$jar" -H "X-CSRF-Token: $csrf" \
+            -X POST http://127.0.0.1:7272/api/v1/runs)" = 409
+          curl -fsS -b "$jar" -H "X-CSRF-Token: $csrf" -H 'Content-Type: application/json' -X PUT \
+            -d '{"apps":["demo"]}' http://127.0.0.1:7272/api/v1/schedule/apps
+          # A real backup run: written, verified, owned by PUID:PGID, 0600.
           curl -fsS -b "$jar" -H "X-CSRF-Token: $csrf" -X POST http://127.0.0.1:7272/api/v1/runs
           for _ in $(seq 1 30); do
             curl -fsS -b "$jar" http://127.0.0.1:7272/api/v1/runs/1 > run.json
@@ -72,6 +88,7 @@ jobs:
           done
           cat run.json; echo
           grep -q '"verified":true' run.json
+          grep -q '"app":"demo","plugin":"generic","status":"ok","files":1' run.json
           docker exec bh sh -c 'stat -c "%u:%g %a %n" /backups/backuphaven-*.tar.zst*' | tee archive.txt
           test "$(grep -c '^99:100 600 ' archive.txt)" = 2
           # Root inside the container, but only the capabilities ADR-0006 allows:

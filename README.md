@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/icon.png" width="128" alt="BackupHaven icon"></p>
+
 # BackupHaven
 
 Simple, automated backups for the apps on your Unraid server.

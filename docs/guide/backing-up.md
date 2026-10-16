@@ -1,0 +1,63 @@
+---
+title: Backing up
+order: 30
+summary: Run a backup, read the status page, and know what the results mean.
+---
+
+# Backing up
+
+The page you see after logging in is the **status page**. Anything that needs
+your attention is shown at the top.
+
+## Run now
+
+**Run now** makes a backup straight away. While it runs, the page shows which
+app it's on, how many apps are done, and how much it has saved so far. You can
+close the page; the backup carries on.
+
+Each backup is **one file** in your backups folder, named after its date and
+time, for example `backuphaven-2026-10-17T030000.tar.zst`. A copy of its
+contents list (`….manifest.json`) sits next to it.
+
+Coming in version 0.2: backups every night, and old backups cleared out
+automatically.
+
+## What a backup does
+
+For every app BackupHaven finds:
+
+1. It copies the files the app's [plugin](plugins.md) asks for.
+2. It copies each **database** while the app keeps running, then **checks the
+   copy for damage**.
+3. It stores the app's container settings (its Unraid template), so the
+   container itself can be recreated.
+
+When every app is done, BackupHaven **reads the whole backup file back** to
+make sure it can be restored, and only then gives it its final name. A file
+named `backuphaven-….tar.zst` in the backups folder has always passed that
+check.
+
+## The results
+
+| Result | Meaning |
+|---|---|
+| **OK** | Everything was backed up and every database is healthy. |
+| **Warnings** | The backup is fine, but something is worth knowing, for example a file that changed while it was being copied, or an app on a share BackupHaven can't see. |
+| **Failed** | Something couldn't be backed up, or a database is damaged. The apps that worked are still in the backup file. |
+
+## Database health
+
+The **Database health** table lists every database from the last backup:
+
+- **Healthy**: the copy was checked and is fine.
+- **quick check** next to it: the database uses features BackupHaven can't fully
+  check (Plex does), so its structure was checked instead.
+- **Damaged**: the copy has errors, which means the app's own database is
+  damaged. Look at the app soon, and keep older backups: they may hold a healthy
+  copy.
+- **Not checked**: the check took too long. The copy is still in the backup.
+
+## Shares BackupHaven can't see
+
+If an app keeps its data on a share that BackupHaven hasn't been given, the
+status page says which share to add. See [Installing](install.md#data-shares).

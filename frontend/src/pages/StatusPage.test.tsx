@@ -1,0 +1,142 @@
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { App } from '../App';
+import { EMPTY_STATUS, mockApi, state } from '../test/mockApi';
+
+const LOGGED_IN = state({ authenticated: true, username: 'admin', method: 'session' });
+
+const RUN = {
+  id: 7,
+  trigger: 'manual',
+  started_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+  finished_at: new Date().toISOString(),
+  status: 'warning',
+  archive: 'backuphaven-2026-10-17T030000.tar.zst',
+  size: 4_200_000_000,
+  verified: true,
+  error: null,
+  summary: { apps: 3, failed: 0, warnings: 1, files: 120, seconds: 75 },
+};
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  window.location.hash = '';
+});
+
+it('shows the last backup, database health and app results', async () => {
+  mockApi({
+    'GET auth/state': LOGGED_IN,
+    'GET status': {
+      body: {
+        ...EMPTY_STATUS,
+        apps: 3,
+        data_shares: ['appdata', 'fast'],
+        last_run: RUN,
+        last_good_run: RUN,
+        missing_shares: [{ app: 'elsewhere', target: '/config', share: 'other' }],
+        database_health: [
+          {
+            app: 'plex',
+            path: 'Library/Databases/com.plexapp.plugins.library.db',
+            status: 'ok',
+            mode: 'quick',
+            size: 900_000_000,
+            messages: [],
+            unknown_collations: ['naturalsort'],
+          },
+          {
+            app: 'Tool',
+            path: 'state.sqlite',
+            status: 'damaged',
+            mode: 'full',
+            size: 1000,
+            messages: ['row 3 missing from index'],
+            unknown_collations: [],
+          },
+        ],
+      },
+    },
+    'GET runs/7': {
+      body: {
+        ...RUN,
+        apps: [
+          {
+            app: 'sonarr',
+            plugin: 'sonarr',
+            status: 'warning',
+            files: 12,
+            bytes: 30_000_000,
+            seconds: 2,
+            errors: [],
+            warnings: ['config.xml changed while it was read'],
+          },
+        ],
+        databases: [],
+      },
+    },
+  });
+  render(<App />);
+  expect(await screen.findByText('Warnings')).toBeInTheDocument();
+  expect(screen.getByText('5 min ago')).toBeInTheDocument();
+  expect(screen.getByText(/4\.2 GB · 3 apps · 1:15/)).toBeInTheDocument();
+  expect(screen.getByText(/checked after writing/)).toBeInTheDocument();
+  expect(screen.getByText(/Some app data is on a share/)).toBeInTheDocument();
+  expect(screen.getByText('/mnt/user/other')).toBeInTheDocument();
+  expect(screen.getByText('com.plexapp.plugins.library.db')).toBeInTheDocument();
+  expect(screen.getByText('quick check')).toBeInTheDocument();
+  expect(screen.getByText('Damaged')).toBeInTheDocument();
+  expect(screen.getByText('row 3 missing from index')).toBeInTheDocument();
+  expect(await screen.findByText('config.xml changed while it was read')).toBeInTheDocument();
+});
+
+it('starts a backup and shows its progress', async () => {
+  let started = false;
+  const calls = mockApi({
+    'GET auth/state': LOGGED_IN,
+    'GET status': () => ({
+      body: started
+        ? {
+            ...EMPTY_STATUS,
+            running: {
+              run_id: 1,
+              seconds: 12,
+              app: 'plex',
+              apps_done: 1,
+              apps_total: 3,
+              files: 40,
+              bytes: 5_000_000,
+              phase: 'backing up',
+            },
+          }
+        : EMPTY_STATUS,
+    }),
+    'POST runs': () => {
+      started = true;
+      return { status: 202, body: { run_id: 1 } };
+    },
+  });
+  render(<App />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Run now' }));
+  expect(await screen.findByText('Backing up plex')).toBeInTheDocument();
+  expect(screen.getByText(/1 of 3 apps · 40 files · 5\.0 MB/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Run now' })).toBeDisabled();
+  expect(calls.some((c) => c.key === 'POST runs')).toBe(true);
+});
+
+it('says when the container list is missing and when a backup failed', async () => {
+  mockApi({
+    'GET auth/state': LOGGED_IN,
+    'GET status': {
+      body: {
+        ...EMPTY_STATUS,
+        templates_found: false,
+        last_run: { ...RUN, status: 'failed', error: 'not enough free space on the backups disk' },
+      },
+    },
+    'GET runs/7': { body: { ...RUN, apps: [], databases: [] } },
+  });
+  render(<App />);
+  expect(await screen.findByText("BackupHaven can't see your containers")).toBeInTheDocument();
+  expect(screen.getByText('The last backup failed')).toBeInTheDocument();
+  expect(screen.getByText('not enough free space on the backups disk')).toBeInTheDocument();
+});

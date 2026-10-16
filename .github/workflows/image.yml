@@ -54,6 +54,7 @@ jobs:
           test "$(docker inspect -f '{{.State.Health.Status}}' bh)" = healthy
           curl -fsS http://127.0.0.1:7272/healthz
           curl -fsS http://127.0.0.1:7272/api/v1/version | grep -q '"name":"BackupHaven"'
+          curl -fsS http://127.0.0.1:7272/api/v1/auth/state | grep -q '"setup_required":true'
           curl -fsS http://127.0.0.1:7272/ | grep -q '<title>BackupHaven</title>'
           # Root inside the container, but only the capabilities ADR-0006 allows:
           # chown, dac_override, fowner, fsetid, setgid, setuid = 0xdb; no new privileges.

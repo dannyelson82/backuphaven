@@ -274,3 +274,23 @@ it('asks for apps in the backup schedule before Run now works', async () => {
   expect(screen.getByRole('button', { name: 'Run now' })).toBeDisabled();
   expect(screen.getByText('0 of 5 apps')).toBeInTheDocument();
 });
+
+it('shows the next backup and any missed ones', async () => {
+  mockApi({
+    'GET auth/state': LOGGED_IN,
+    'GET status': {
+      body: {
+        ...EMPTY_STATUS,
+        scheduled_apps: ['plex'],
+        next_run: '2026-10-18T03:00:00+00:00',
+        missed: [
+          { due: '2026-10-17T03:00:00+00:00', reason: "BackupHaven wasn't running at that time" },
+        ],
+      },
+    },
+  });
+  render(<App />);
+  expect(await screen.findByText('A scheduled backup was missed')).toBeInTheDocument();
+  expect(screen.getByText(/BackupHaven wasn't running at that time/)).toBeInTheDocument();
+  expect(screen.getByText(/Next backup:/)).toBeInTheDocument();
+});

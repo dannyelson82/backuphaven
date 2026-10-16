@@ -15,6 +15,7 @@ from backuphaven.api import (
     auth_routes,
     developer_routes,
     run_routes,
+    schedule_routes,
     security_routes,
 )
 from backuphaven.auth.network import IPAddress, read_default_gateways
@@ -27,6 +28,7 @@ from backuphaven.headers import SecurityHeadersMiddleware
 from backuphaven.middleware import RequestLogMiddleware
 from backuphaven.plugins.registry import bundled
 from backuphaven.runner import Runner, remove_leftovers
+from backuphaven.scheduler import Scheduler
 from backuphaven.secretbox import SecretBox
 
 logger = logging.getLogger(__name__)
@@ -75,7 +77,9 @@ def create_app(
         removed = remove_leftovers(settings.backups_dir)
         if removed:
             logger.info("removed what an interrupted run left behind", extra={"files": removed})
+        app.state.scheduler.start()
         yield
+        app.state.scheduler.stop()
         diagnostics.disable()
         db.close()
 
@@ -95,6 +99,7 @@ def create_app(
     app.state.gateway_seen_at = None
     app.state.diagnostics = diagnostics
     app.state.runner = Runner(db, settings, bundled(), diagnostics)
+    app.state.scheduler = Scheduler(db, app.state.runner, settings)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestLogMiddleware)
 
@@ -106,7 +111,14 @@ def create_app(
     def version() -> Version:
         return Version(name="BackupHaven", version=__version__)
 
-    for module in (auth_routes, security_routes, app_routes, run_routes, developer_routes):
+    for module in (
+        auth_routes,
+        security_routes,
+        app_routes,
+        run_routes,
+        schedule_routes,
+        developer_routes,
+    ):
         app.include_router(module.router, prefix="/api/v1")
 
     web_dir = settings.web_dir

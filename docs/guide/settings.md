@@ -8,6 +8,21 @@ summary: The Settings page, including the developer option for diagnostics files
 
 Open **Settings** from the menu at the top of every page.
 
+## Schedule
+
+- **Back up automatically**: on by default. Switch it off to make backups only
+  with **Run now**.
+- **Time**: when the backup starts, in the server's time zone (shown under the
+  box). The default is 03:00.
+- **Days**: the days it runs. All days by default.
+
+Press **Save**. The page then shows when the next backup is due. Nothing runs
+until apps are in the [backup schedule](apps.md).
+
+The time zone comes from the container's `TZ` setting, which Unraid fills in.
+If the times look wrong, check **TZ** in BackupHaven's container settings
+(under **Show more settings**).
+
 ## Developer
 
 ### Diagnostics files

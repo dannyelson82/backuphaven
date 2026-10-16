@@ -98,6 +98,9 @@ def configure_logging(level: str, log_dir: Path | None, max_bytes: int, backups:
         old.close()
     for handler in handlers:
         handler.setFormatter(formatter)
+        # Each handler keeps the chosen level, so switching on the diagnostics files
+        # (which lowers BackupHaven's own level to DEBUG) doesn't flood these.
+        handler.setLevel(level.upper())
         root.addHandler(handler)
     root.setLevel(level.upper())
 

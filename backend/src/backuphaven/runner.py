@@ -12,7 +12,7 @@ import os
 import shutil
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -22,6 +22,7 @@ from backuphaven.archive import ArchiveWriter, folder_key, safe_name, verify
 from backuphaven.config import Settings
 from backuphaven.db import Database, DbCheck, Run, RunApp
 from backuphaven.db.types import utcnow
+from backuphaven.diagnostics import Diagnostics
 from backuphaven.plugins.manifest import Manifest
 from backuphaven.plugins.registry import Registry
 from backuphaven.selection import OutsideShareError, effective_rules, resolve_app_folder, select
@@ -34,6 +35,7 @@ ARCHIVE_PREFIX = "backuphaven-"
 ARCHIVE_SUFFIX = ".tar.zst"
 MANIFEST_SUFFIX = ".manifest.json"
 WORK_DIR = ".work"
+_BIG_FILE = 50 * 1024 * 1024  # logged one by one in the diagnostics files
 FORMAT = 1
 
 
@@ -127,8 +129,15 @@ def _free_bytes(path: Path) -> int:
 class Runner:
     """Runs backups, one at a time."""
 
-    def __init__(self, db: Database, settings: Settings, registry: Registry) -> None:
+    def __init__(
+        self,
+        db: Database,
+        settings: Settings,
+        registry: Registry,
+        diagnostics: Diagnostics | None = None,
+    ) -> None:
         self._db = db
+        self._diagnostics = diagnostics
         self._settings = settings
         self._registry = registry
         self._lock = threading.Lock()
@@ -230,9 +239,20 @@ class Runner:
                 raise LowSpaceError("not enough free space on the backups disk")
             work.mkdir(parents=True, exist_ok=True)
             apps = discovery.discover(*self._discovery_dirs())
+            found = len(apps)
             if only is not None:
                 wanted = {n.lower() for n in only}
                 apps = [a for a in apps if a.name.lower() in wanted]
+            logger.debug(
+                "run starting",
+                extra={
+                    "run_id": run_id,
+                    "apps_found": found,
+                    "apps": [a.name for a in apps],
+                    "only": only,
+                    "free_bytes": _free_bytes(backups),
+                },
+            )
             self.progress.apps_total = len(apps)
             archive = backups / archive_name(datetime.now(UTC))
             writer = ArchiveWriter(archive)
@@ -249,9 +269,20 @@ class Runner:
                     raise LowSpaceError("the backups disk filled up during the run")
             self._check_cancel()
             self.progress.app, self.progress.phase = None, "verifying"
+            step = time.monotonic()
             manifest = writer.close(self._manifest(run_id, results, only))
             writer = None
+            logger.debug("archive written", extra={"seconds": round(time.monotonic() - step, 2)})
+            step = time.monotonic()
             check_result = verify(archive.with_name(archive.name + ".partial"), manifest)
+            logger.debug(
+                "archive verified",
+                extra={
+                    "seconds": round(time.monotonic() - step, 2),
+                    "ok": check_result.ok,
+                    "entries": check_result.entries,
+                },
+            )
             if not check_result.ok:
                 raise RuntimeError(
                     "the archive failed verification: " + "; ".join(check_result.problems[:5])
@@ -322,6 +353,16 @@ class Runner:
         started = time.monotonic()
         plugin = self._registry.match(app.image)
         result = AppResult(name=app.name, plugin=plugin.id)
+        logger.debug(
+            "app starting",
+            extra={
+                "app": app.name,
+                "image": app.image,
+                "plugin": plugin.id,
+                "folders": [f"{f.target}={f.host}" for f in app.folders],
+                "missing": [f"{m.target}={m.host}" for m in app.missing],
+            },
+        )
         base = f"apps/{key}"
         for missing in app.missing:
             result.warn(
@@ -344,6 +385,16 @@ class Runner:
         for folder in folders:
             self._backup_folder(writer, plugin, folder, f"{base}", work, result)
         result.seconds = time.monotonic() - started
+        logger.debug(
+            "app finished",
+            extra={
+                "app": app.name,
+                "status": result.status,
+                "files": result.files,
+                "bytes": result.bytes,
+                "seconds": round(result.seconds, 2),
+            },
+        )
         return result
 
     def _backup_folder(
@@ -367,7 +418,21 @@ class Runner:
             else:
                 result.error(f"{folder.host} doesn't exist")
             return
+        step = time.monotonic()
         selection = select(root, effective_rules(plugin))
+        logger.debug(
+            "folder read",
+            extra={
+                "app": result.name,
+                "folder": str(root),
+                "files": len(selection.files),
+                "databases": [e.rel for e in selection.databases],
+                "bytes": selection.total_bytes,
+                "special": len(selection.skipped_special),
+                "seconds": round(time.monotonic() - step, 2),
+            },
+        )
+        step = time.monotonic()
         for rel in selection.skipped_special:
             result.warn(f"skipped special file {rel}")
         for pattern in selection.missing_expected:
@@ -389,9 +454,22 @@ class Runner:
                 continue
             if record.changed:
                 result.warn(f"{entry.rel} changed while it was read")
+            if record.size >= _BIG_FILE:
+                logger.debug(
+                    "big file stored",
+                    extra={"app": result.name, "file": entry.rel, "bytes": record.size},
+                )
             result.files += 1
             result.bytes += record.size
             self._count(record.size)
+        logger.debug(
+            "files stored",
+            extra={
+                "app": result.name,
+                "folder": str(root),
+                "seconds": round(time.monotonic() - step, 2),
+            },
+        )
         for index, entry in enumerate(selection.databases):
             self._check_cancel()
             self._backup_database(
@@ -414,7 +492,26 @@ class Runner:
         try:
             wal = Path(f"{source}-wal")
             wal_bytes = wal.stat().st_size if wal.exists() else 0
+            logger.debug(
+                "database copy starting",
+                extra={
+                    "app": result.name,
+                    "db": rel,
+                    "bytes": source.stat().st_size,
+                    "wal_bytes": wal_bytes,
+                    "copy_to": str(copy),
+                },
+            )
             snap = snapshot(source, copy)
+            logger.debug(
+                "database copied",
+                extra={
+                    "app": result.name,
+                    "db": rel,
+                    "method": snap.method,
+                    "seconds": round(snap.seconds, 2),
+                },
+            )
             checked = check(copy)
             timing = {
                 "copy_method": snap.method,
@@ -533,3 +630,19 @@ class Runner:
                 "archive": archive.name if archive else None,
             },
         )
+        if self._diagnostics is not None:
+            self._diagnostics.write_run(
+                run_id,
+                {
+                    "run_id": run_id,
+                    "status": status,
+                    "error": error,
+                    "only": only,
+                    "archive": archive.name if archive else None,
+                    "size": size,
+                    "verified": verified,
+                    "seconds": round(seconds, 2),
+                    "finished": datetime.now(UTC).isoformat(timespec="seconds"),
+                    "apps": [asdict(r) for r in results],
+                },
+            )

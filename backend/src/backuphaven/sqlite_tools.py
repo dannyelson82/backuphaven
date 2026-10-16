@@ -85,6 +85,10 @@ def snapshot(source: Path, dest: Path, timeout_s: float = 60.0) -> SnapshotResul
         if method == "immutable":
             before = _state(source)
             _copy(source, dest, immutable=True, timeout_s=timeout_s)
+            logger.debug(
+                "immutable copy done",
+                extra={"db": str(source), "seconds": round(time.monotonic() - started, 2)},
+            )
             if _state(source) != before or _is_live(source):
                 logger.info(
                     "database changed during the copy; copying again", extra={"db": str(source)}
@@ -138,6 +142,7 @@ def _check_tables(
         if name in skipped or len(problems) >= MAX_MESSAGES:
             continue
         quoted = '"' + name.replace('"', '""') + '"'
+        step = time.monotonic()
         while True:
             try:
                 rows = conn.execute(f"PRAGMA quick_check({quoted})").fetchall()
@@ -146,6 +151,9 @@ def _check_tables(
                 if not _add_stub(conn, stubs, str(exc)):
                     raise
         problems += [str(r[0]) for r in rows if r[0] != "ok"]
+        took = time.monotonic() - step
+        if took >= 1:
+            logger.debug("slow table check", extra={"table": name, "seconds": round(took, 2)})
     return tuple(problems[:MAX_MESSAGES]), skipped
 
 
@@ -169,6 +177,14 @@ def check(path: Path, timeout_s: float = 600.0, full_max_bytes: int = 8 << 30) -
         conn.set_progress_handler(lambda: int(time.monotonic() > deadline), 10_000)
         while True:
             pragma = "integrity_check" if mode == "full" else "quick_check"
+            logger.debug(
+                "database check",
+                extra={
+                    "db": str(path),
+                    "pragma": pragma,
+                    "after_seconds": round(time.monotonic() - started, 2),
+                },
+            )
             try:
                 rows = conn.execute(f"PRAGMA {pragma}({MAX_MESSAGES})").fetchall()
             except sqlite3.OperationalError as exc:
@@ -180,6 +196,7 @@ def check(path: Path, timeout_s: float = 600.0, full_max_bytes: int = 8 << 30) -
                     mode = "quick"  # e.g. an unknown full-text tokenizer
                     continue
                 if _needs_addon(text):
+                    logger.debug("checking table by table", extra={"db": str(path), "reason": text})
                     try:
                         messages, skipped = _check_tables(conn, stubs)
                     except sqlite3.OperationalError as inner:

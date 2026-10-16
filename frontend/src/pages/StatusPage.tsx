@@ -20,6 +20,7 @@ import {
   Title,
 } from '@mantine/core';
 import { useState } from 'react';
+import { Link } from 'react-router';
 import { type AuthState, useLogout } from '../api/auth';
 import { errorMessage } from '../api/client';
 import {
@@ -256,6 +257,9 @@ export function StatusPage({ auth }: { auth: AuthState }) {
             <Text size="sm" c="dimmed">
               {auth.method === 'bypass' ? 'Local network access' : auth.username}
             </Text>
+            <Button component={Link} to="/settings" variant="default" size="xs">
+              Settings
+            </Button>
             {auth.method === 'session' && (
               <Button variant="default" size="xs" onClick={() => logout.mutate()}>
                 Log out

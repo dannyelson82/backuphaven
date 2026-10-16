@@ -148,6 +148,20 @@ def test_discover_reads_the_template_folder(tmp_path: Path) -> None:
     assert PurePosixPath(sonarr.missing[0].host) == PurePosixPath("/mnt/user/fast/sonarr")
 
 
+def test_hidden_files_are_ignored_and_bad_templates_warned_about_once(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    templates = tmp_path / "templates-user"
+    templates.mkdir()
+    (templates / "my-sonarr.xml").write_text(SONARR)
+    (templates / "._my-sonarr.xml").write_bytes(b"\x00\x05\x16\x07 Mac resource fork")
+    (templates / "my-broken-once.xml").write_text("<Container>")
+    for _ in range(3):  # the status page asks again every few seconds
+        assert [a.name for a in discover(templates, tmp_path)] == ["sonarr"]
+    skipped = [r for r in caplog.records if r.getMessage() == "template skipped"]
+    assert [getattr(r, "file", None) for r in skipped] == ["my-broken-once.xml"]
+
+
 def test_discover_without_templates_folder(tmp_path: Path) -> None:
     assert discover(tmp_path / "nope", tmp_path / "nope") == []
 

@@ -41,6 +41,29 @@ class LowSpaceError(Exception):
     """The backups disk is below the minimum free space."""
 
 
+class CancelledError(Exception):
+    """Someone pressed Cancel."""
+
+
+class NoSuchAppsError(ValueError):
+    """Run now was asked for apps that aren't there."""
+
+
+def remove_leftovers(backups: Path) -> list[str]:
+    """Delete what a run cut off by a restart left behind: its half-written archive
+    and its working folder. Call only while no run is going (at start-up)."""
+    removed: list[str] = []
+    for partial in backups.glob(f"{ARCHIVE_PREFIX}*{ARCHIVE_SUFFIX}.partial"):
+        if partial.is_file() and not partial.is_symlink():
+            partial.unlink(missing_ok=True)
+            removed.append(partial.name)
+    work = backups / WORK_DIR
+    if work.is_dir() and not work.is_symlink():
+        shutil.rmtree(work, ignore_errors=True)
+        removed.append(WORK_DIR)
+    return removed
+
+
 @dataclass
 class Progress:
     """What the running run is doing, for the status page."""
@@ -109,48 +132,86 @@ class Runner:
         self._settings = settings
         self._registry = registry
         self._lock = threading.Lock()
+        self._cancel = threading.Event()
         self.progress: Progress | None = None
 
     @property
     def running(self) -> bool:
         return self._lock.locked()
 
-    def start(self, trigger: str) -> int | None:
-        """Start a run in the background. None if one is already running."""
+    def start(self, trigger: str, only: list[str] | None = None) -> int | None:
+        """Start a run in the background. None if one is already running.
+
+        ``only`` limits the run to those apps (by name); raises ``NoSuchAppsError``
+        for names that aren't found."""
         if not self._lock.acquire(blocking=False):
             return None
         try:
-            run_id = self._create_run(trigger)
+            self._check_names(only)
+            run_id = self._create_run(trigger, only)
         except Exception:
             self._lock.release()
             raise
-        thread = threading.Thread(target=self._run_and_release, args=(run_id,), name="backup-run")
+        self._cancel.clear()
+        thread = threading.Thread(
+            target=self._run_and_release, args=(run_id, only), name="backup-run"
+        )
         thread.start()
         return run_id
 
-    def run_now(self, trigger: str = "manual") -> int:
+    def run_now(self, trigger: str = "manual", only: list[str] | None = None) -> int:
         """Run in this thread (tests and the scheduler's own thread)."""
         with self._lock:
-            run_id = self._create_run(trigger)
-            self._run(run_id)
+            self._check_names(only)
+            self._cancel.clear()
+            run_id = self._create_run(trigger, only)
+            self._run(run_id, only)
         return run_id
 
-    def _run_and_release(self, run_id: int) -> None:
+    def cancel(self) -> bool:
+        """Ask the running run to stop. False if nothing is running."""
+        if not self.running:
+            return False
+        self._cancel.set()
+        if self.progress is not None and self.progress.phase != "verifying":
+            self.progress.phase = "cancelling"
+        return True
+
+    def _check_cancel(self) -> None:
+        if self._cancel.is_set():
+            raise CancelledError
+
+    def _check_names(self, only: list[str] | None) -> None:
+        if only is None:
+            return
+        if not only:
+            raise NoSuchAppsError("choose at least one app")
+        found = {a.name.lower() for a in discovery.discover(*self._discovery_dirs())}
+        unknown = [n for n in only if n.lower() not in found]
+        if unknown:
+            raise NoSuchAppsError("not found: " + ", ".join(unknown))
+
+    def _discovery_dirs(self) -> tuple[Path, Path]:
+        return self._settings.templates_dir, self._settings.data_root
+
+    def _run_and_release(self, run_id: int, only: list[str] | None) -> None:
         try:
-            self._run(run_id)
+            self._run(run_id, only)
         finally:
             self._lock.release()
 
-    def _create_run(self, trigger: str) -> int:
+    def _create_run(self, trigger: str, only: list[str] | None = None) -> int:
         with self._db.write() as session:
-            run = Run(trigger=trigger, status="running")
+            run = Run(
+                trigger=trigger, status="running", summary=None if only is None else {"only": only}
+            )
             session.add(run)
             session.flush()
             return run.id
 
     # --- the run itself ----------------------------------------------------------------
 
-    def _run(self, run_id: int) -> None:
+    def _run(self, run_id: int, only: list[str] | None = None) -> None:
         settings = self._settings
         started = time.monotonic()
         self.progress = Progress(run_id=run_id, started=started)
@@ -162,25 +223,33 @@ class Runner:
         size: int | None = None
         verified = False
         writer: ArchiveWriter | None = None
+        cancelled = False
         try:
             backups.mkdir(parents=True, exist_ok=True)
             if _free_bytes(backups) < settings.min_free_bytes:
                 raise LowSpaceError("not enough free space on the backups disk")
             work.mkdir(parents=True, exist_ok=True)
-            apps = discovery.discover(settings.templates_dir, settings.data_root)
+            apps = discovery.discover(*self._discovery_dirs())
+            if only is not None:
+                wanted = {n.lower() for n in only}
+                apps = [a for a in apps if a.name.lower() in wanted]
             self.progress.apps_total = len(apps)
             archive = backups / archive_name(datetime.now(UTC))
             writer = ArchiveWriter(archive)
             used: set[str] = set()
             for app in apps:
+                self._check_cancel()
                 key = _unique(safe_name(app.name), used)
                 self.progress.app, self.progress.phase = app.name, "backing up"
+                if self._cancel.is_set():
+                    self.progress.phase = "cancelling"
                 results.append(self._backup_app(writer, app, key, work))
                 self.progress.apps_done += 1
                 if _free_bytes(backups) < settings.min_free_bytes:
                     raise LowSpaceError("the backups disk filled up during the run")
+            self._check_cancel()
             self.progress.app, self.progress.phase = None, "verifying"
-            manifest = writer.close(self._manifest(run_id, results))
+            manifest = writer.close(self._manifest(run_id, results, only))
             writer = None
             check_result = verify(archive.with_name(archive.name + ".partial"), manifest)
             if not check_result.ok:
@@ -196,8 +265,12 @@ class Runner:
                 self._own(path)
             size, verified = archive.stat().st_size, True
         except Exception as exc:
-            logger.exception("backup run failed", extra={"run_id": run_id})
-            error = str(exc) or type(exc).__name__
+            if isinstance(exc, CancelledError):
+                cancelled = True
+                logger.info("backup run cancelled", extra={"run_id": run_id})
+            else:
+                logger.exception("backup run failed", extra={"run_id": run_id})
+                error = str(exc) or type(exc).__name__
             if writer is not None:
                 writer.abort()
             if archive is not None:
@@ -207,16 +280,24 @@ class Runner:
             shutil.rmtree(work, ignore_errors=True)
             with contextlib.suppress(OSError):
                 work.parent.rmdir()  # only if no other run's work is there
-            self._save(run_id, results, archive, size, verified, error, time.monotonic() - started)
+            self._save(
+                run_id, results, archive, size, verified, error, time.monotonic() - started,
+                only, cancelled,
+            )  # fmt: skip
             self.progress = None
+            self._cancel.clear()
 
     def _own(self, path: Path) -> None:
         if os.geteuid() == 0:
             os.chown(path, self._settings.puid, self._settings.pgid)
 
-    def _manifest(self, run_id: int, results: list[AppResult]) -> dict[str, Any]:
+    def _manifest(
+        self, run_id: int, results: list[AppResult], only: list[str] | None
+    ) -> dict[str, Any]:
         return {
             "format": FORMAT,
+            # Apps chosen for this run; None means every app was included.
+            "only": only,
             "backuphaven": __version__,
             "run_id": run_id,
             "created": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -292,6 +373,7 @@ class Runner:
         for pattern in selection.missing_expected:
             result.error(f"expected file missing: {pattern}")
         for entry in selection.files:
+            self._check_cancel()
             name = f"{base}/files/{fkey}/{entry.rel}"
             source = root / entry.rel
             try:
@@ -311,6 +393,7 @@ class Runner:
             result.bytes += record.size
             self._count(record.size)
         for index, entry in enumerate(selection.databases):
+            self._check_cancel()
             self._backup_database(
                 writer, root, entry.rel, f"{base}/databases/{fkey}", work, index, result
             )
@@ -374,8 +457,12 @@ class Runner:
         verified: bool,
         error: str | None,
         seconds: float,
+        only: list[str] | None = None,
+        cancelled: bool = False,
     ) -> None:
-        status: Status = "failed" if error else worst([r.status for r in results])
+        status: Status | Literal["cancelled"] = (
+            "cancelled" if cancelled else "failed" if error else worst([r.status for r in results])
+        )
         with self._db.write() as session:
             run = session.get(Run, run_id)
             if run is None:
@@ -392,6 +479,7 @@ class Runner:
                 "warnings": sum(r.status == "warning" for r in results),
                 "files": sum(r.files for r in results),
                 "seconds": round(seconds, 1),
+                **({} if only is None else {"only": only}),
             }
             for r in results:
                 session.add(

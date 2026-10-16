@@ -152,6 +152,9 @@ def mounted_data_shares(data_root: Path) -> frozenset[str]:
         return frozenset()
 
 
+_warned: set[tuple[str, str]] = set()
+
+
 def discover(templates_dir: Path, data_root: Path) -> list[App]:
     """Every container template, matched against the mounted data shares."""
     shares = mounted_data_shares(data_root)
@@ -161,12 +164,18 @@ def discover(templates_dir: Path, data_root: Path) -> list[App]:
     except OSError:
         files = []
     for path in files:
+        if path.name.startswith("."):
+            continue  # hidden, e.g. "._my-plex.xml" left by a Mac: not a template
         try:
-            if path.stat().st_size > MAX_TEMPLATE_BYTES:
+            info = path.stat()
+            if info.st_size > MAX_TEMPLATE_BYTES:
                 raise TemplateError("template too large")
             template = parse_template(path.read_text(encoding="utf-8", errors="replace"))
         except (OSError, TemplateError) as exc:
-            logger.warning("template skipped", extra={"file": path.name, "reason": str(exc)})
+            key = (path.name, str(exc))
+            if key not in _warned:  # discovery runs on every status refresh: warn once
+                _warned.add(key)
+                logger.warning("template skipped", extra={"file": path.name, "reason": str(exc)})
             continue
         apps.append(replace(discover_app(template, shares), template_file=str(path)))
     return sorted(apps, key=lambda app: app.name.lower())

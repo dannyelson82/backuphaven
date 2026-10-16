@@ -19,6 +19,23 @@ Each backup is **one file** in your backups folder, named after its date and
 time, for example `backuphaven-2026-10-17T030000.tar.zst`. A copy of its
 contents list (`….manifest.json`) sits next to it.
 
+### Back up only some apps
+
+**Choose apps…** (next to Run now) lists every app BackupHaven found. Tick the
+ones you want and press **Back up N apps**. Only those apps go into the backup
+file. This is handy for a quick test, or for one app before you update it.
+
+### Cancel a backup
+
+While a backup runs, a **Cancel** button sits next to the progress bar. It
+stops after the file it is reading, and the half-written backup file is
+deleted. Your apps are not affected. Cancel isn't offered in the last step,
+while the backup file is being checked, which is quick.
+
+If BackupHaven is restarted during a backup, that backup is marked **Failed**
+("interrupted by a restart"), and the half-written file is deleted the next
+time BackupHaven starts.
+
 Coming in version 0.2: backups every night, and old backups cleared out
 automatically.
 
@@ -44,6 +61,7 @@ check.
 | **OK** | Everything was backed up and every database is healthy. |
 | **Warnings** | The backup is fine, but something is worth knowing, for example a file that changed while it was being copied, or an app on a share BackupHaven can't see. |
 | **Failed** | Something couldn't be backed up, or a database is damaged. The apps that worked are still in the backup file. |
+| **Cancelled** | Someone pressed Cancel. No backup file was kept. |
 
 ## Database health
 

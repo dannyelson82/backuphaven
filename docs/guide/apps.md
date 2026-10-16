@@ -30,6 +30,9 @@ At the top, **In the backup schedule** shows only the apps in the schedule and
 New containers don't join the schedule by themselves: add them when you
 install them.
 
+**Restore…** (once an app has been backed up) puts its files back from a
+backup you choose; see [Restoring an app](restore.md).
+
 ## Apps marked "Not installed"
 
 Unraid keeps the template of every container you have ever installed, so the

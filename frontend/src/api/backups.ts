@@ -17,6 +17,7 @@ export interface Backup {
   keep_reasons: string[];
   protected: boolean;
   on_disk: boolean;
+  apps: string[];
 }
 
 const KEY = ['backups'] as const;

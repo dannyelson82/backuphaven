@@ -37,6 +37,7 @@ def test_list_and_delete_backups(unraid: Settings) -> None:
         newest, older = listed
         assert newest["protected"] and "newest good backup" in newest["keep_reasons"]
         assert newest["on_disk"] and newest["databases"] == 2 and newest["healthy"] == 2
+        assert newest["apps"] == ["sonarr", "Tool"] and older["apps"] == ["Tool"]
         assert older["keep_reasons"] == ["chosen apps"] and not older["protected"]
         assert first not in [b["run_id"] for b in listed]
 

@@ -54,4 +54,5 @@ Downloads are made while you wait, without using space on the server. A
 `.tar.zst` file opens with 7-Zip (version 23 or newer) on Windows, or with
 `tar --zstd -xf <file>` on Linux and macOS.
 
-Restoring an app from this page comes in the next update.
+To put an app back as it was in a backup, see [Restoring an app](restore.md).
+Recent restores, with **Undo**, are listed at the top of the Backups page.

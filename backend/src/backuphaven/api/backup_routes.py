@@ -13,7 +13,7 @@ from backuphaven import audit, downloads, retention, unpack
 from backuphaven.api.deps import DbDep, InteractiveDep, csrf_protect, require_setup_done
 from backuphaven.archive import safe_name
 from backuphaven.config import Settings
-from backuphaven.db import DbCheck, Run
+from backuphaven.db import DbCheck, Run, RunApp
 from backuphaven.runner import Runner
 
 router = APIRouter(dependencies=[Depends(require_setup_done), Depends(csrf_protect)])
@@ -37,6 +37,8 @@ class BackupView(BaseModel):
     keep_reasons: list[str]
     protected: bool
     on_disk: bool
+    # Apps with something stored in this backup (restorable).
+    apps: list[str] = []
 
 
 def _protected(reasons: list[str]) -> bool:
@@ -53,6 +55,15 @@ def list_backups(request: Request, db: DbDep, _principal: InteractiveDep) -> lis
             .where(Run.archive.is_not(None), Run.deleted_at.is_(None))
             .order_by(Run.started_at.desc())
         ).all()
+        stored: dict[int, list[str]] = {}
+        for row in session.scalars(
+            select(RunApp).where(
+                RunApp.run_id.in_([r.id for r in runs]),
+                RunApp.status != "skipped",
+                RunApp.files > 0,
+            )
+        ):
+            stored.setdefault(row.run_id, []).append(row.app)
         checks: dict[int, list[str]] = {}
         for check in session.scalars(
             select(DbCheck).where(DbCheck.run_id.in_([r.id for r in runs]))
@@ -73,6 +84,7 @@ def list_backups(request: Request, db: DbDep, _principal: InteractiveDep) -> lis
             damaged=checks.get(run.id, []).count("damaged"),
             keep_reasons=reasons.get(run.id, []),
             protected=_protected(reasons.get(run.id, [])),
+            apps=sorted(stored.get(run.id, []), key=str.lower),
             on_disk=retention.is_ours(str(run.archive))
             and (settings.backups_dir / str(run.archive)).is_file(),
         )

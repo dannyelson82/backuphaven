@@ -14,6 +14,7 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import { type Backup, useBackups, useDeleteBackup } from '../api/backups';
 import { errorMessage } from '../api/client';
+import { useRestores, useUndoRestore } from '../api/restores';
 import { formatBytes, formatDate, timeAgo } from '../format';
 
 const RESULT: Record<string, { color: string; label: string }> = {
@@ -101,6 +102,54 @@ function BackupRow({ backup, onDelete }: { backup: Backup; onDelete: () => void 
   );
 }
 
+function RecentRestores() {
+  const restores = useRestores();
+  const undo = useUndoRestore();
+  const recent = (restores.data ?? []).slice(0, 5);
+  if (!recent.length) return null;
+  const label: Record<string, string> = {
+    running: 'Restoring…',
+    done: 'Restored',
+    failed: 'Failed, nothing changed',
+    undone: 'Undone',
+    expired: 'Restored (undo expired)',
+  };
+  return (
+    <Card withBorder>
+      <Stack gap="xs">
+        <Title order={4}>Recent restores</Title>
+        {recent.map((r) => {
+          const canUndo =
+            r.status === 'done' && r.undo_until && new Date(r.undo_until) > new Date();
+          return (
+            <Group key={r.id} justify="space-between" wrap="nowrap">
+              <Text size="sm">
+                <b>{r.app}</b> · {label[r.status] ?? r.status} · {timeAgo(r.started_at)}
+                {r.error && ` · ${r.error}`}
+              </Text>
+              {canUndo && (
+                <Button
+                  size="xs"
+                  variant="default"
+                  loading={undo.isPending && undo.variables === r.id}
+                  onClick={() => undo.mutate(r.id)}
+                  title="Stop the container in Unraid first"
+                >
+                  Undo
+                </Button>
+              )}
+            </Group>
+          );
+        })}
+        {undo.isError && <Alert color="red">{errorMessage(undo.error)}</Alert>}
+        <Text size="xs" c="dimmed">
+          Stop the app&apos;s container in Unraid before pressing Undo, and start it afterwards.
+        </Text>
+      </Stack>
+    </Card>
+  );
+}
+
 export function BackupsPage() {
   const backups = useBackups();
   const remove = useDeleteBackup();
@@ -117,6 +166,7 @@ export function BackupsPage() {
           Settings → Keeping backups. Restoring comes in a later version.
         </Text>
       )}
+      <RecentRestores />
       {backups.isPending && <Loader />}
       {backups.isError && <Alert color="red">{errorMessage(backups.error)}</Alert>}
       {remove.isError && <Alert color="red">{errorMessage(remove.error)}</Alert>}

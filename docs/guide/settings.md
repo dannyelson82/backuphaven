@@ -6,8 +6,7 @@ summary: The Settings page, including the developer option for diagnostics files
 
 # Settings
 
-Open **Settings** from the button at the top of the status page. **Back to
-status** takes you back.
+Open **Settings** from the menu at the top of every page.
 
 ## Developer
 

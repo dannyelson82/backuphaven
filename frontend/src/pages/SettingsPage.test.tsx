@@ -35,6 +35,6 @@ it('switches the diagnostics files on from Settings → Developer', async () => 
   expect(await screen.findByText('debug.log')).toBeInTheDocument();
   expect(screen.getByRole('switch', { name: /^Diagnostics files/ })).toBeChecked();
   expect(calls.some((c) => c.key === 'PUT settings/developer')).toBe(true);
-  await userEvent.click(screen.getByRole('link', { name: 'Back to status' }));
+  await userEvent.click(screen.getByRole('link', { name: 'Dashboard' }));
   expect(await screen.findByRole('button', { name: 'Run now' })).toBeInTheDocument();
 });

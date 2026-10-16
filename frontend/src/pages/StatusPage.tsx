@@ -1,13 +1,12 @@
 import {
   Alert,
+  Anchor,
   Badge,
   Button,
   Card,
   Checkbox,
   Code,
-  Container,
   Group,
-  Image,
   List,
   Loader,
   Modal,
@@ -21,7 +20,6 @@ import {
 } from '@mantine/core';
 import { useState } from 'react';
 import { Link } from 'react-router';
-import { type AuthState, useLogout } from '../api/auth';
 import { errorMessage } from '../api/client';
 import {
   type DbCheck,
@@ -252,157 +250,153 @@ function AppResults({ apps }: { apps: RunApp[] }) {
   );
 }
 
-export function StatusPage({ auth }: { auth: AuthState }) {
+export function StatusPage() {
   const status = useStatus();
   const runNow = useRunNow();
-  const logout = useLogout();
   const [choosing, setChoosing] = useState(false);
   const lastRun = status.data?.last_run ?? null;
   const detail = useRun(lastRun?.id);
 
+  const scheduled = status.data?.scheduled_apps ?? [];
+
   return (
-    <Container size="md" py="md">
-      <Stack gap="md">
-        <Group justify="space-between">
-          <Group gap="sm">
-            <Image src="./favicon.svg" w={36} h={36} alt="" />
-            <Title order={2}>BackupHaven</Title>
-          </Group>
-          <Group gap="xs">
-            <Text size="sm" c="dimmed">
-              {auth.method === 'bypass' ? 'Local network access' : auth.username}
-            </Text>
-            <Button component={Link} to="/settings" variant="default" size="xs">
-              Settings
-            </Button>
-            {auth.method === 'session' && (
-              <Button variant="default" size="xs" onClick={() => logout.mutate()}>
-                Log out
-              </Button>
-            )}
-          </Group>
-        </Group>
+    <Stack gap="md">
+      {status.isPending && <Loader />}
+      {status.isError && <Alert color="red">{errorMessage(status.error)}</Alert>}
 
-        {status.isPending && <Loader />}
-        {status.isError && <Alert color="red">{errorMessage(status.error)}</Alert>}
+      {status.data && !status.data.templates_found && (
+        <Alert color="yellow" title="BackupHaven can't see your containers">
+          Add the <b>Unraid flash (read only)</b> path (<Code>/boot</Code>) to BackupHaven&apos;s
+          container settings.
+        </Alert>
+      )}
+      {status.data && status.data.missing_shares.length > 0 && (
+        <Alert color="yellow" title="Some app data is on a share BackupHaven can't see">
+          <List size="sm">
+            {status.data.missing_shares.map((m) => (
+              <List.Item key={`${m.app}${m.target}`}>
+                {m.app}: add <Code>/mnt/user/{m.share}</Code> as a path, with the same path on both
+                sides.
+              </List.Item>
+            ))}
+          </List>
+        </Alert>
+      )}
+      {lastRun?.status === 'failed' && lastRun.error && (
+        <Alert color="red" title="The last backup failed">
+          {lastRun.error}
+        </Alert>
+      )}
 
-        {status.data && !status.data.templates_found && (
-          <Alert color="yellow" title="BackupHaven can't see your containers">
-            Add the <b>Unraid flash (read only)</b> path (<Code>/boot</Code>) to BackupHaven&apos;s
-            container settings.
-          </Alert>
-        )}
-        {status.data && status.data.missing_shares.length > 0 && (
-          <Alert color="yellow" title="Some app data is on a share BackupHaven can't see">
-            <List size="sm">
-              {status.data.missing_shares.map((m) => (
-                <List.Item key={`${m.app}${m.target}`}>
-                  {m.app}: add <Code>/mnt/user/{m.share}</Code> as a path, with the same path on
-                  both sides.
-                </List.Item>
-              ))}
-            </List>
-          </Alert>
-        )}
-        {lastRun?.status === 'failed' && lastRun.error && (
-          <Alert color="red" title="The last backup failed">
-            {lastRun.error}
-          </Alert>
-        )}
-
-        {status.data && (
-          <Card withBorder>
-            <Stack gap="sm">
-              <Group justify="space-between" align="flex-start">
-                <Stack gap={4}>
-                  <Title order={4}>Last backup</Title>
-                  {lastRun ? (
-                    <Group gap="xs">
-                      <StatusBadge status={lastRun.status} />
-                      <Text size="sm" title={formatDate(lastRun.started_at)}>
-                        {timeAgo(lastRun.started_at)}
-                      </Text>
-                      {lastRun.size !== null && (
-                        <Text size="sm" c="dimmed">
-                          {formatBytes(lastRun.size)} · {lastRun.summary?.apps ?? 0} apps ·{' '}
-                          {formatDuration(lastRun.summary?.seconds)}
-                        </Text>
-                      )}
-                      {lastRun.summary?.only && (
-                        <Text size="sm" c="dimmed">
-                          Chosen apps only: {lastRun.summary.only.join(', ')}
-                        </Text>
-                      )}
-                    </Group>
-                  ) : (
-                    <Text size="sm" c="dimmed">
-                      No backups yet.
+      {status.data && (
+        <Card withBorder>
+          <Stack gap="sm">
+            <Group justify="space-between" align="flex-start">
+              <Stack gap={4}>
+                <Title order={4}>Last backup</Title>
+                {lastRun ? (
+                  <Group gap="xs">
+                    <StatusBadge status={lastRun.status} />
+                    <Text size="sm" title={formatDate(lastRun.started_at)}>
+                      {timeAgo(lastRun.started_at)}
                     </Text>
-                  )}
-                </Stack>
-                <Group gap="xs">
-                  <Button
-                    variant="default"
-                    onClick={() => setChoosing(true)}
-                    disabled={status.data.running !== null}
-                  >
-                    Choose apps…
-                  </Button>
-                  <Button
-                    onClick={() => runNow.mutate(undefined)}
-                    loading={runNow.isPending}
-                    disabled={status.data.running !== null}
-                  >
-                    Run now
-                  </Button>
-                </Group>
+                    {lastRun.size !== null && (
+                      <Text size="sm" c="dimmed">
+                        {formatBytes(lastRun.size)} · {lastRun.summary?.apps ?? 0} apps ·{' '}
+                        {formatDuration(lastRun.summary?.seconds)}
+                      </Text>
+                    )}
+                    {lastRun.summary?.only && (
+                      <Text size="sm" c="dimmed">
+                        Chosen apps only: {lastRun.summary.only.join(', ')}
+                      </Text>
+                    )}
+                  </Group>
+                ) : (
+                  <Text size="sm" c="dimmed">
+                    No backups yet.
+                  </Text>
+                )}
+              </Stack>
+              <Group gap="xs">
+                <Button
+                  variant="default"
+                  onClick={() => setChoosing(true)}
+                  disabled={status.data.running !== null}
+                >
+                  Choose apps…
+                </Button>
+                <Button
+                  onClick={() => runNow.mutate(undefined)}
+                  loading={runNow.isPending}
+                  disabled={status.data.running !== null || scheduled.length === 0}
+                >
+                  Run now
+                </Button>
               </Group>
-              <ChooseApps
-                opened={choosing}
-                onClose={() => setChoosing(false)}
-                onStart={(apps) => {
-                  setChoosing(false);
-                  runNow.mutate(apps);
-                }}
-              />
-              {runNow.isError && <Alert color="red">{errorMessage(runNow.error)}</Alert>}
-              {status.data.running && <Running progress={status.data.running} />}
-              {lastRun?.archive && (
-                <Text size="xs" c="dimmed">
-                  {lastRun.archive}
-                  {lastRun.verified && ' · checked after writing'}
-                </Text>
-              )}
-            </Stack>
+            </Group>
+            {scheduled.length === 0 ? (
+              <Alert color="blue" title="Nothing is in the backup schedule yet">
+                Go to{' '}
+                <Anchor component={Link} to="/apps">
+                  Apps
+                </Anchor>{' '}
+                and press <b>Add to backup schedule</b> for each app you want backed up. Run now and
+                the nightly backup back up those apps.
+              </Alert>
+            ) : (
+              <Text size="sm" c="dimmed">
+                Run now backs up the {scheduled.length === 1 ? 'app' : `${scheduled.length} apps`}{' '}
+                in the backup schedule: {scheduled.join(', ')}.
+              </Text>
+            )}
+            <ChooseApps
+              opened={choosing}
+              onClose={() => setChoosing(false)}
+              onStart={(apps) => {
+                setChoosing(false);
+                runNow.mutate(apps);
+              }}
+            />
+            {runNow.isError && <Alert color="red">{errorMessage(runNow.error)}</Alert>}
+            {status.data.running && <Running progress={status.data.running} />}
+            {lastRun?.archive && (
+              <Text size="xs" c="dimmed">
+                {lastRun.archive}
+                {lastRun.verified && ' · checked after writing'}
+              </Text>
+            )}
+          </Stack>
+        </Card>
+      )}
+
+      {status.data && (
+        <SimpleGrid cols={{ base: 1, sm: 3 }}>
+          <Card withBorder padding="sm">
+            <Text size="xs" c="dimmed">
+              In the backup schedule
+            </Text>
+            <Text fw={600}>
+              {scheduled.length} of {status.data.apps} apps
+            </Text>
           </Card>
-        )}
+          <Card withBorder padding="sm">
+            <Text size="xs" c="dimmed">
+              Data shares
+            </Text>
+            <Text fw={600}>{status.data.data_shares.join(', ') || 'none'}</Text>
+          </Card>
+          <Card withBorder padding="sm">
+            <Text size="xs" c="dimmed">
+              Free on the backups disk
+            </Text>
+            <Text fw={600}>{formatBytes(status.data.backups_free_bytes)}</Text>
+          </Card>
+        </SimpleGrid>
+      )}
 
-        {status.data && (
-          <SimpleGrid cols={{ base: 1, sm: 3 }}>
-            <Card withBorder padding="sm">
-              <Text size="xs" c="dimmed">
-                Apps found
-              </Text>
-              <Text fw={600}>{status.data.apps}</Text>
-            </Card>
-            <Card withBorder padding="sm">
-              <Text size="xs" c="dimmed">
-                Data shares
-              </Text>
-              <Text fw={600}>{status.data.data_shares.join(', ') || 'none'}</Text>
-            </Card>
-            <Card withBorder padding="sm">
-              <Text size="xs" c="dimmed">
-                Free on the backups disk
-              </Text>
-              <Text fw={600}>{formatBytes(status.data.backups_free_bytes)}</Text>
-            </Card>
-          </SimpleGrid>
-        )}
-
-        {status.data && <DatabaseHealth checks={status.data.database_health} />}
-        {detail.data && detail.data.apps.length > 0 && <AppResults apps={detail.data.apps} />}
-      </Stack>
-    </Container>
+      {status.data && <DatabaseHealth checks={status.data.database_health} />}
+      {detail.data && detail.data.apps.length > 0 && <AppResults apps={detail.data.apps} />}
+    </Stack>
   );
 }

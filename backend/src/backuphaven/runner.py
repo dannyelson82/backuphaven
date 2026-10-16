@@ -85,6 +85,7 @@ class Progress:
 class AppResult:
     name: str
     plugin: str
+    key: str = ""  # its folder inside the backup: apps/<key>/
     status: Status = "ok"
     files: int = 0
     bytes: int = 0
@@ -393,6 +394,7 @@ class Runner:
             "apps": [
                 {
                     "name": r.name,
+                    "key": r.key,
                     "plugin": r.plugin,
                     "status": r.status,
                     "files": r.files,
@@ -410,7 +412,7 @@ class Runner:
     ) -> AppResult:
         started = time.monotonic()
         plugin = self._registry.match(app.image)
-        result = AppResult(name=app.name, plugin=plugin.id)
+        result = AppResult(name=app.name, plugin=plugin.id, key=key)
         logger.debug(
             "app starting",
             extra={

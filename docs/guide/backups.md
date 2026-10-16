@@ -1,7 +1,7 @@
 ---
 title: The Backups page
 order: 35
-summary: Every backup file, why it's kept, and deleting one by hand.
+summary: Every backup file, why it's kept, what's inside, downloading and deleting.
 ---
 
 # The Backups page
@@ -29,4 +29,29 @@ holds the last healthy copy of some app's database. That copy might be all
 that's left if the database is damaged later. These go once a newer backup takes
 their place.
 
-Restoring and downloading from this page come in a later version.
+## Looking inside a backup
+
+Press **Open** next to a backup. You'll see every app in it, with its result,
+how many files and databases it holds, and its size. Apps that were skipped
+can't be opened, because nothing of theirs was stored.
+
+Open an app to list its files:
+
+- `files/<folder>/…`: the app's files, in the folder it uses inside its
+  container (usually `config`);
+- `databases/<folder>/…`: the checked copies of its databases;
+- `template.xml`: the app's Unraid container settings.
+
+With many files, **Find a file** narrows the list down.
+
+## Downloading
+
+- **Download backup**: the whole backup file (`.tar.zst`).
+- **Download *app***: just that app, as its own `.tar.zst`.
+- Click a file's name to download just that file.
+
+Downloads are made while you wait, without using space on the server. A
+`.tar.zst` file opens with 7-Zip (version 23 or newer) on Windows, or with
+`tar --zstd -xf <file>` on Linux and macOS.
+
+Restoring an app from this page comes in the next update.

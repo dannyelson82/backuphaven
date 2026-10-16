@@ -11,6 +11,7 @@ import {
   Title,
 } from '@mantine/core';
 import { useState } from 'react';
+import { Link } from 'react-router';
 import { type Backup, useBackups, useDeleteBackup } from '../api/backups';
 import { errorMessage } from '../api/client';
 import { formatBytes, formatDate, timeAgo } from '../format';
@@ -74,17 +75,27 @@ function BackupRow({ backup, onDelete }: { backup: Backup; onDelete: () => void 
             {backup.archive}
           </Text>
         </Stack>
-        <Button
-          size="xs"
-          variant="default"
-          color="red"
-          disabled={backup.protected}
-          title={backup.protected ? 'Protected: see why it is kept' : undefined}
-          onClick={onDelete}
-          style={{ flexShrink: 0 }}
-        >
-          Delete
-        </Button>
+        <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
+          <Button
+            size="xs"
+            variant="default"
+            component={Link}
+            to={`/backups/${backup.run_id}`}
+            disabled={!backup.on_disk}
+          >
+            Open
+          </Button>
+          <Button
+            size="xs"
+            variant="default"
+            color="red"
+            disabled={backup.protected}
+            title={backup.protected ? 'Protected: see why it is kept' : undefined}
+            onClick={onDelete}
+          >
+            Delete
+          </Button>
+        </Group>
       </Group>
     </Card>
   );

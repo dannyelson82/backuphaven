@@ -70,14 +70,14 @@ def read_manifest(archive: Path) -> dict[str, Any]:
     if sidecar.is_file():
         data: dict[str, Any] = json.loads(sidecar.read_bytes())
         return data
-    for info, handle in _members(archive):
+    for info, handle in members(archive):
         if info.name == MANIFEST_NAME and handle is not None:
             data = json.loads(handle.read())
             return data
     raise UnpackError("the backup has no contents list")
 
 
-def _members(archive: Path) -> Iterator[tuple[tarfile.TarInfo, IO[bytes] | None]]:
+def members(archive: Path) -> Iterator[tuple[tarfile.TarInfo, IO[bytes] | None]]:
     with archive.open("rb") as raw:
         reader = zstandard.ZstdDecompressor().stream_reader(raw)
         with tarfile.open(fileobj=reader, mode="r|") as tar:
@@ -186,7 +186,7 @@ def extract(
     writers = {p.prefix: _Writer(p.dest, set_owner) for p in parts}
     result = UnpackResult()
     try:
-        for info, data in _members(archive):
+        for info, data in members(archive):
             match = next((p for p in parts if info.name.startswith(p.prefix)), None)
             if match is None:
                 continue

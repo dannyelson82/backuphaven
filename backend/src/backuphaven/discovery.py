@@ -55,12 +55,25 @@ class MissingShare:
 
 
 @dataclass(frozen=True)
+class WholeShare:
+    """A mapping of a whole share (``/mnt/user/<share>`` itself). Usually media or
+    downloads, never backed up, unless the app's plugin says the share holds the
+    app's own data (``share_folders``, e.g. PlanHaven's attachments)."""
+
+    target: str
+    host: str
+    share: str
+    mounted: bool
+
+
+@dataclass(frozen=True)
 class App:
     name: str
     image: str
     folders: tuple[DataFolder, ...] = ()
     missing: tuple[MissingShare, ...] = ()
     template_file: str | None = None  # where the template was read from
+    whole_shares: tuple[WholeShare, ...] = ()
 
 
 class TemplateError(ValueError):
@@ -130,17 +143,44 @@ def discover_app(template: Template, data_shares: frozenset[str]) -> App:
     """Which of the template's folders are app data on the mounted data shares."""
     folders: list[DataFolder] = []
     missing: list[MissingShare] = []
+    whole: list[WholeShare] = []
     for mapping in template.mappings:
         host = normalise_host_path(mapping.host)
         share = None if host is None else share_of(host)
-        if host is None or share is None or host == USER_ROOT / share:
-            continue  # not in a share, or a whole share (media, downloads...)
+        if host is None or share is None:
+            continue  # not in a share
+        if host == USER_ROOT / share:  # a whole share (media, downloads...)
+            whole.append(WholeShare(mapping.target, str(host), share, mounted=share in data_shares))
+            continue
         if share in data_shares:
             folders.append(DataFolder(target=mapping.target, host=str(host), share=share))
         elif _looks_like_app_data(mapping.target):
             missing.append(MissingShare(target=mapping.target, host=str(host), share=share))
     return App(
-        name=template.name, image=template.image, folders=tuple(folders), missing=tuple(missing)
+        name=template.name,
+        image=template.image,
+        folders=tuple(folders),
+        missing=tuple(missing),
+        whole_shares=tuple(whole),
+    )
+
+
+def with_plugin_shares(app: App, share_folders: list[str]) -> App:
+    """``app`` plus the whole-share mappings its plugin claims as its own data:
+    as data folders when the share is mounted, otherwise as missing shares."""
+    claimed = [w for w in app.whole_shares if w.target in share_folders]
+    if not claimed:
+        return app
+    return replace(
+        app,
+        folders=(
+            *app.folders,
+            *(DataFolder(w.target, w.host, w.share) for w in claimed if w.mounted),
+        ),
+        missing=(
+            *app.missing,
+            *(MissingShare(w.target, w.host, w.share) for w in claimed if not w.mounted),
+        ),
     )
 
 

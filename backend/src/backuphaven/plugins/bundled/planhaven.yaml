@@ -1,0 +1,27 @@
+id: planhaven
+name: PlanHaven
+version: 1.0.0
+kind: app
+plugin_api: 1
+author: BackupHaven
+description: >-
+  PlanHaven's settings, secrets and its own nightly database dumps
+  (config/backups), plus its attachments share (/data). The live PostgreSQL
+  files (pgdata) are left out: copied while PlanHaven runs they may not
+  restore, and the nightly dumps are the safe copy of the database.
+recognise:
+  images: ["*/planhaven", "planhaven"]
+backup:
+  mode: snapshot
+  folder: /config
+  share_folders: ["/data"]
+  databases: []
+  include:
+    - "**"
+  exclude:
+    - "pgdata/**"
+    - "logs/**"
+  expect:
+    - "backups/planhaven-*.dump"
+restore:
+  stop_first: true

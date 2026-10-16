@@ -17,6 +17,18 @@ from backuphaven.plugins.manifest import Manifest
 SQLITE_HEADER = b"SQLite format 3\x00"
 # Files SQLite keeps next to a database; the snapshot already contains their contents.
 SIDECARS = ("-wal", "-shm", "-journal")
+# Where restores keep set-aside files; never backed up (restore.py).
+RESERVED_DIR = ".backuphaven-restore"
+
+
+def server_database(names: set[str]) -> str | None:
+    """Whether a folder holding these entries is a database server's data folder,
+    whose files can't be copied safely while the server runs."""
+    if "PG_VERSION" in names and "global" in names:
+        return "PostgreSQL"
+    if names & {"ibdata1", "aria_log_control", "mysql.ibd"}:
+        return "MariaDB/MySQL"
+    return None
 
 
 @dataclass(frozen=True)
@@ -98,6 +110,8 @@ class Selection:
     databases: list[Entry] = field(default_factory=list)
     skipped_special: list[str] = field(default_factory=list)
     missing_expected: list[str] = field(default_factory=list)
+    # Database server folders found among the chosen files: (folder, kind).
+    server_databases: list[tuple[str, str]] = field(default_factory=list)
 
     @property
     def total_bytes(self) -> int:
@@ -141,8 +155,13 @@ def select(root: Path, rules: Rules) -> Selection:
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
         rel_dir = os.path.relpath(dirpath, root)
         rel_dir = "" if rel_dir == "." else rel_dir.replace(os.sep, "/")
+        server = server_database({*dirnames, *filenames})
+        if server is not None:
+            selection.server_databases.append((rel_dir or ".", server))
         kept_dirs = []
         for name in sorted(dirnames):
+            if name == RESERVED_DIR:
+                continue
             rel = f"{rel_dir}/{name}" if rel_dir else name
             full = os.path.join(dirpath, name)  # noqa: PTH118
             if os.path.islink(full):  # noqa: PTH114 - os.walk gives str paths

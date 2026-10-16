@@ -420,6 +420,7 @@ class Runner:
     ) -> AppResult:
         started = time.monotonic()
         plugin = self._registry.match(app.image)
+        app = discovery.with_plugin_shares(app, plugin.backup.share_folders)
         result = AppResult(name=app.name, plugin=plugin.id, key=key)
         logger.debug(
             "app starting",
@@ -449,14 +450,28 @@ class Runner:
                 result.warn(f"template couldn't be read: {exc}")
         if plugin.backup.mode == "stop":
             result.warn("stop mode needs the socket proxy (coming later); backed up while running")
-        folders = [f for f in app.folders if plugin.backup.folder in ("*", f.target)]
+        folders = [
+            f
+            for f in app.folders
+            if plugin.backup.folder in ("*", f.target) or f.target in plugin.backup.share_folders
+        ]
         if not folders and not app.missing:
             if app.folders:
                 result.error(f"no data folder mapped to {plugin.backup.folder}")
             else:
                 result.warn("no data folders on the data shares")
+        # Files the plugin expects may be in any of the app's folders.
+        missing_everywhere: set[str] | None = None
         for folder in folders:
-            self._backup_folder(writer, plugin, folder, f"{base}", work, result)
+            not_found = self._backup_folder(writer, plugin, folder, f"{base}", work, result)
+            if not_found is not None:
+                missing_everywhere = (
+                    set(not_found)
+                    if missing_everywhere is None
+                    else missing_everywhere & set(not_found)
+                )
+        for pattern in sorted(missing_everywhere or ()):
+            result.error(f"expected file missing: {pattern}")
         result.seconds = time.monotonic() - started
         logger.debug(
             "app finished",
@@ -478,20 +493,22 @@ class Runner:
         base: str,
         work: Path,
         result: AppResult,
-    ) -> None:
+    ) -> list[str] | None:
+        """Back up one data folder. Returns the expected patterns not found in it, or
+        None if the folder couldn't be read."""
         fkey = folder_key(folder.target)
         result.folders.append({"key": fkey, "target": folder.target, "host": folder.host})
         try:
             root = resolve_app_folder(self._settings.data_root, folder.host)
         except (OutsideShareError, ValueError) as exc:
             result.error(str(exc))
-            return
+            return None
         if not root.is_dir():
             if root.is_file():  # a single file mapped into the container
                 result.warn(f"{folder.target} is a single file; not backed up yet")
             else:
                 result.error(f"{folder.host} doesn't exist")
-            return
+            return None
         step = time.monotonic()
         selection = select(root, effective_rules(plugin))
         logger.debug(
@@ -509,8 +526,12 @@ class Runner:
         step = time.monotonic()
         for rel in selection.skipped_special:
             result.warn(f"skipped special file {rel}")
-        for pattern in selection.missing_expected:
-            result.error(f"expected file missing: {pattern}")
+        for rel, kind in selection.server_databases:
+            result.warn(
+                f"{rel} holds a {kind} database: its files are copied while the app runs and "
+                "may not restore. Keep the app's own database dumps (stop mode, coming later, "
+                "will copy it safely)"
+            )
         for entry in selection.files:
             self._check_cancel()
             name = f"{base}/files/{fkey}/{entry.rel}"
@@ -549,6 +570,7 @@ class Runner:
             self._backup_database(
                 writer, root, entry.rel, f"{base}/databases/{fkey}", work, index, result
             )
+        return selection.missing_expected
 
     def _backup_database(
         self,

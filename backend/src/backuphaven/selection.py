@@ -5,6 +5,7 @@ must stay inside its data share; walking never follows symbolic links; special f
 (sockets, FIFOs, devices) are skipped. ``effective_rules`` and ``matches`` are pure.
 """
 
+import fnmatch
 import os
 import stat
 from dataclasses import dataclass, field
@@ -55,6 +56,32 @@ def _dir_excluded(rel: str, exclude: tuple[str, ...]) -> bool:
     """Whether a whole folder is excluded (``logs/**``, ``**/Cache/**``), so it isn't walked."""
     path = PurePosixPath(rel)
     return any(p.endswith("/**") and path.full_match(p[:-3]) for p in exclude)
+
+
+def could_contain(rel_dir: str, patterns: tuple[str, ...]) -> bool:
+    """Whether any file under folder ``rel_dir`` could match one of ``patterns``.
+
+    Compares the folder's parts with the start of each pattern; ``**`` matches any
+    depth, so a pattern reaching one means yes. Pure; used to skip folders, like
+    Plex's posters, that hold many files and nothing the plugin wants.
+    """
+    parts = PurePosixPath(rel_dir).parts
+    for pattern in patterns:
+        wanted = PurePosixPath(pattern).parts
+        for index, part in enumerate(parts):
+            if index >= len(wanted) - 1:
+                # The pattern ends here (a file name) or before: nothing deeper,
+                # unless its last part is "**".
+                if index < len(wanted) and wanted[index] == "**":
+                    return True
+                break
+            if wanted[index] == "**":
+                return True
+            if not fnmatch.fnmatchcase(part, wanted[index]):
+                break
+        else:
+            return True
+    return False
 
 
 @dataclass(frozen=True)
@@ -108,6 +135,9 @@ def select(root: Path, rules: Rules) -> Selection:
     """Walk ``root`` (never following links) and sort entries into files and databases."""
     selection = Selection(root=root)
     candidates: list[tuple[Entry, str]] = []
+    # Folders worth entering: with a fixed list of databases, only those that could
+    # hold an included file or one of the databases. ("auto" looks everywhere.)
+    wanted = None if rules.databases == "auto" else (*rules.include, *rules.databases)
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
         rel_dir = os.path.relpath(dirpath, root)
         rel_dir = "" if rel_dir == "." else rel_dir.replace(os.sep, "/")
@@ -117,7 +147,9 @@ def select(root: Path, rules: Rules) -> Selection:
             full = os.path.join(dirpath, name)  # noqa: PTH118
             if os.path.islink(full):  # noqa: PTH114 - os.walk gives str paths
                 filenames.append(name)  # a link to a folder is archived as a link
-            elif not _dir_excluded(rel, rules.exclude):
+            elif not _dir_excluded(rel, rules.exclude) and (
+                wanted is None or could_contain(rel, wanted)
+            ):
                 kept_dirs.append(name)
         dirnames[:] = kept_dirs
         for name in sorted(filenames):

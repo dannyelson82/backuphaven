@@ -11,6 +11,7 @@ from backuphaven.plugins.registry import BUNDLED_DIR, bundled, image_name, load_
 from backuphaven.selection import (
     OutsideShareError,
     Rules,
+    could_contain,
     effective_rules,
     resolve_app_folder,
     select,
@@ -181,6 +182,56 @@ def test_plex_takes_databases_and_settings_but_not_caches(tmp_path: Path) -> Non
         f"{base}/Preferences.xml",
     ]
     assert selection.missing_expected == []
+
+
+def test_plex_never_walks_its_poster_folders(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Plex's Metadata and Media folders can hold hundreds of thousands of files;
+    walking them took minutes on a real server although none are wanted."""
+    root = tmp_path / "plex"
+    pms = root / "Library" / "Application Support" / "Plex Media Server"
+    write(pms / "Preferences.xml", "<Preferences/>")
+    make_db(pms / "Plug-in Support" / "Databases" / "com.plexapp.plugins.library.db")
+    write(pms / "Metadata" / "Movies" / "a" / "poster.jpg")
+    write(pms / "Media" / "localhost" / "b" / "thumb.jpg")
+    walked: list[str] = []
+    real_walk = os.walk
+
+    def spy(top, **kwargs):  # type: ignore[no-untyped-def]
+        for dirpath, dirnames, filenames in real_walk(top, **kwargs):
+            walked.append(os.path.relpath(dirpath, root))
+            yield dirpath, dirnames, filenames
+
+    monkeypatch.setattr("backuphaven.selection.os.walk", spy)
+    plex = bundled().plugins["plex"]
+    select(root, effective_rules(plex))
+    assert not any("Metadata" in d or "Media/" in d or d.endswith("/Media") for d in walked)
+
+    walked.clear()  # with posters switched on, they are read
+    chosen = select(root, effective_rules(plex, {"metadata": True}))
+    assert any(d.endswith("Metadata/Movies/a") for d in walked)
+    assert any(e.rel.endswith("poster.jpg") for e in chosen.files)
+
+
+@pytest.mark.parametrize(
+    ("folder", "patterns", "expected"),
+    [
+        ("Library", ("Library/App/Prefs.xml",), True),
+        ("Library/App", ("Library/App/Prefs.xml",), True),
+        ("Library/App/Metadata", ("Library/App/Prefs.xml",), False),
+        ("Library/Other", ("Library/App/**",), False),
+        ("Library/App/a/b/c", ("Library/App/**",), True),
+        ("Library/App/Databases", ("Library/App/Databases/*.db",), True),
+        ("Library/App/Databases/old", ("Library/App/Databases/*.db",), False),
+        ("anything/deep", ("**",), True),
+        ("x/y", ("**/*.db",), True),
+        ("Library/Ap1", ("Library/Ap[0-9]/**",), True),
+        ("Other", ("Library/**", "Other/x.json"), True),
+    ],
+)
+def test_could_contain(folder: str, patterns: tuple[str, ...], expected: bool) -> None:
+    assert could_contain(folder, patterns) is expected
 
 
 def test_generic_plugin_finds_databases_by_their_header(tmp_path: Path) -> None:

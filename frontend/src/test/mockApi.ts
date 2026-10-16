@@ -52,5 +52,7 @@ export const EMPTY_STATUS = {
   templates_found: true,
   missing_shares: [],
   backups_free_bytes: 100_000_000_000,
+  backups_count: 0,
+  backups_bytes: 0,
   database_health: [],
 };

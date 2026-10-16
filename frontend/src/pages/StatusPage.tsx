@@ -155,9 +155,10 @@ function DatabaseHealth({ checks }: { checks: DbCheck[] }) {
   if (!checks.length) return null;
   return (
     <Card withBorder>
-      <Title order={4} mb="sm">
-        Database health
-      </Title>
+      <Title order={4}>Database health</Title>
+      <Text size="xs" c="dimmed" mb="xs">
+        The latest check of each database of the apps in the backup schedule.
+      </Text>
       <Table.ScrollContainer minWidth={420}>
         <Table verticalSpacing="xs">
           <Table.Thead>
@@ -317,7 +318,7 @@ export function StatusPage() {
                         {formatDuration(lastRun.summary?.seconds)}
                       </Text>
                     )}
-                    {lastRun.summary?.only && (
+                    {lastRun.summary?.chosen && lastRun.summary.only && (
                       <Text size="sm" c="dimmed">
                         Chosen apps only: {lastRun.summary.only.join(', ')}
                       </Text>
@@ -326,6 +327,12 @@ export function StatusPage() {
                 ) : (
                   <Text size="sm" c="dimmed">
                     No backups yet.
+                  </Text>
+                )}
+                {lastRun?.status === 'failed' && status.data.last_good_run && (
+                  <Text size="sm" c="dimmed">
+                    Last good backup: {formatDate(status.data.last_good_run.started_at)} (
+                    {timeAgo(status.data.last_good_run.started_at)})
                   </Text>
                 )}
               </Stack>
@@ -393,13 +400,21 @@ export function StatusPage() {
       )}
 
       {status.data && (
-        <SimpleGrid cols={{ base: 1, sm: 3 }}>
-          <Card withBorder padding="sm">
+        <SimpleGrid cols={{ base: 1, xs: 2, md: 4 }}>
+          <Card withBorder padding="sm" component={Link} to="/apps">
             <Text size="xs" c="dimmed">
               In the backup schedule
             </Text>
             <Text fw={600}>
               {scheduled.length} of {status.data.apps} apps
+            </Text>
+          </Card>
+          <Card withBorder padding="sm" component={Link} to="/backups">
+            <Text size="xs" c="dimmed">
+              Backups kept
+            </Text>
+            <Text fw={600}>
+              {status.data.backups_count} · {formatBytes(status.data.backups_bytes)}
             </Text>
           </Card>
           <Card withBorder padding="sm">

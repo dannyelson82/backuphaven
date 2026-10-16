@@ -22,6 +22,7 @@ export interface Run {
     seconds: number;
     // Set when Run now was limited to some apps.
     only?: string[];
+    chosen?: boolean;
   } | null;
 }
 
@@ -77,6 +78,8 @@ export interface Status {
   templates_found: boolean;
   missing_shares: { app: string; target: string; share: string }[];
   backups_free_bytes: number | null;
+  backups_count: number;
+  backups_bytes: number;
   database_health: DbCheck[];
 }
 

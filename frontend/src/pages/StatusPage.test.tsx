@@ -33,6 +33,8 @@ it('shows the last backup, database health and app results', async () => {
         data_shares: ['appdata', 'fast'],
         last_run: RUN,
         last_good_run: RUN,
+        backups_count: 12,
+        backups_bytes: 2_100_000_000,
         missing_shares: [{ app: 'elsewhere', target: '/config', share: 'other' }],
         database_health: [
           {
@@ -98,6 +100,7 @@ it('shows the last backup, database health and app results', async () => {
   expect(screen.getByText('/mnt/user/other')).toBeInTheDocument();
   expect(screen.getByText('com.plexapp.plugins.library.db')).toBeInTheDocument();
   expect(screen.getByText('quick check')).toBeInTheDocument();
+  expect(screen.getByText(/12 · 2\.1 GB/)).toBeInTheDocument();
   expect(screen.getByText('Damaged')).toBeInTheDocument();
   expect(screen.getByText('row 3 missing from index')).toBeInTheDocument();
   expect(await screen.findByText('config.xml changed while it was read')).toBeInTheDocument();
@@ -238,7 +241,7 @@ it('shows a cancelled backup and a backup of chosen apps', async () => {
           archive: null,
           size: null,
           verified: false,
-          summary: { ...RUN.summary, only: ['plex'] },
+          summary: { ...RUN.summary, only: ['plex'], chosen: true },
         },
       },
     },
@@ -293,4 +296,20 @@ it('shows the next backup and any missed ones', async () => {
   expect(await screen.findByText('A scheduled backup was missed')).toBeInTheDocument();
   expect(screen.getByText(/BackupHaven wasn't running at that time/)).toBeInTheDocument();
   expect(screen.getByText(/Next backup:/)).toBeInTheDocument();
+});
+
+it('points to the last good backup when the latest failed', async () => {
+  mockApi({
+    'GET auth/state': LOGGED_IN,
+    'GET status': {
+      body: {
+        ...EMPTY_STATUS,
+        last_run: { ...RUN, id: 8, status: 'failed', error: 'disk full' },
+        last_good_run: { ...RUN, started_at: '2026-10-15T03:00:00+00:00' },
+      },
+    },
+    'GET runs/8': { body: { ...RUN, id: 8, apps: [], databases: [] } },
+  });
+  render(<App />);
+  expect(await screen.findByText(/Last good backup:/)).toBeInTheDocument();
 });

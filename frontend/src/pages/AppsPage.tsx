@@ -5,6 +5,7 @@ import {
   Card,
   Group,
   Loader,
+  Modal,
   SegmentedControl,
   Stack,
   Text,
@@ -12,6 +13,8 @@ import {
   Title,
 } from '@mantine/core';
 import { useState } from 'react';
+import { useNavigate } from 'react-router';
+import { useBackups } from '../api/backups';
 import { errorMessage } from '../api/client';
 import {
   type DiscoveredApp,
@@ -19,7 +22,7 @@ import {
   useDiscoveredApps,
   useScheduleApps,
 } from '../api/status';
-import { formatBytes, timeAgo } from '../format';
+import { formatBytes, formatDate, timeAgo } from '../format';
 
 const RESULT: Partial<Record<RunStatus, { color: string; label: string }>> = {
   ok: { color: 'green', label: 'OK' },
@@ -29,14 +32,51 @@ const RESULT: Partial<Record<RunStatus, { color: string; label: string }>> = {
 
 type Show = 'scheduled' | 'all';
 
+function RestoreChoice({ app, onClose }: { app: string; onClose: () => void }) {
+  const backups = useBackups();
+  const navigate = useNavigate();
+  const holding = (backups.data ?? []).filter((b) =>
+    b.apps.some((name) => name.toLowerCase() === app.toLowerCase()),
+  );
+  return (
+    <Modal opened onClose={onClose} title={`Restore ${app} from…`}>
+      <Stack gap="xs">
+        {backups.isPending && <Loader size="sm" />}
+        {backups.data && holding.length === 0 && (
+          <Text size="sm" c="dimmed">
+            No backup holds {app} yet.
+          </Text>
+        )}
+        {holding.map((b) => (
+          <Button
+            key={b.run_id}
+            variant="default"
+            justify="space-between"
+            onClick={() => navigate(`/restore/${b.run_id}/${encodeURIComponent(app)}`)}
+            rightSection={
+              <Text size="xs" c="dimmed">
+                {timeAgo(b.started_at)}
+              </Text>
+            }
+          >
+            {formatDate(b.started_at)}
+          </Button>
+        ))}
+      </Stack>
+    </Modal>
+  );
+}
+
 function AppRow({
   app,
   busy,
   onToggle,
+  onRestore,
 }: {
   app: DiscoveredApp;
   busy: boolean;
   onToggle: () => void;
+  onRestore: () => void;
 }) {
   const last = app.last_backup;
   const result = last ? RESULT[last.status] : undefined;
@@ -84,15 +124,21 @@ function AppRow({
             </Group>
           )}
         </Stack>
-        <Button
-          size="xs"
-          variant={app.scheduled ? 'default' : 'filled'}
-          onClick={onToggle}
-          loading={busy}
-          style={{ flexShrink: 0 }}
-        >
-          {app.scheduled ? 'Remove' : 'Add to backup schedule'}
-        </Button>
+        <Stack gap={4} style={{ flexShrink: 0 }} align="flex-end">
+          <Button
+            size="xs"
+            variant={app.scheduled ? 'default' : 'filled'}
+            onClick={onToggle}
+            loading={busy}
+          >
+            {app.scheduled ? 'Remove' : 'Add to backup schedule'}
+          </Button>
+          {last && (
+            <Button size="xs" variant="subtle" color="orange" onClick={onRestore}>
+              Restore…
+            </Button>
+          )}
+        </Stack>
       </Group>
     </Card>
   );
@@ -104,6 +150,7 @@ export function AppsPage() {
   const [show, setShow] = useState<Show | null>(null);
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState<string | null>(null);
 
   const scheduled = discovered.data?.scheduled ?? [];
   // Until the owner chooses, show everything when nothing is scheduled yet.
@@ -183,11 +230,13 @@ export function AppsPage() {
                 app={app}
                 busy={busy === app.name}
                 onToggle={() => change(app.name, !app.scheduled)}
+                onRestore={() => setRestoring(app.name)}
               />
             ))}
           </Stack>
         </>
       )}
+      {restoring && <RestoreChoice app={restoring} onClose={() => setRestoring(null)} />}
     </Stack>
   );
 }

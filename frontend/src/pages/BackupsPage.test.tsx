@@ -130,3 +130,36 @@ it('opens a backup to show its apps and files with download links', async () => 
   expect(screen.getByText('files/config/latest (link)')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /oldapp/ })).toBeDisabled();
 });
+
+it('lists recent restores with Undo while it is possible', async () => {
+  const restore = (id: number, status: string, untilDays: number | null) => ({
+    id,
+    run_id: 1,
+    app: `app${id}`,
+    status,
+    started_at: new Date().toISOString(),
+    finished_at: new Date().toISOString(),
+    undo_until:
+      untilDays === null ? null : new Date(Date.now() + untilDays * 86_400_000).toISOString(),
+    error: status === 'failed' ? 'checksum differs' : null,
+    detail: null,
+    actor: 'admin',
+  });
+  const calls = mockApi({
+    'GET auth/state': LOGGED_IN,
+    'GET status': { body: EMPTY_STATUS },
+    'GET backups': { body: [] },
+    'GET restores': {
+      body: [restore(3, 'done', 6), restore(2, 'failed', null), restore(1, 'undone', null)],
+    },
+    'POST restores/3/undo': { body: restore(3, 'undone', null) },
+  });
+  window.location.hash = '#/backups';
+  render(<App />);
+  expect(await screen.findByText('Recent restores')).toBeInTheDocument();
+  expect(screen.getByText(/Failed, nothing changed · .* · checksum differs/)).toBeInTheDocument();
+  const undo = screen.getAllByRole('button', { name: 'Undo' });
+  expect(undo).toHaveLength(1);
+  await userEvent.click(undo[0]);
+  expect(calls.some((c) => c.key === 'POST restores/3/undo')).toBe(true);
+});

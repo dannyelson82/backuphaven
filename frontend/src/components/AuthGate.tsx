@@ -4,6 +4,7 @@ import { useAuthState } from '../api/auth';
 import { AppsPage } from '../pages/AppsPage';
 import { BackupPage } from '../pages/BackupPage';
 import { BackupsPage } from '../pages/BackupsPage';
+import { RestorePage } from '../pages/RestorePage';
 import { errorMessage } from '../api/client';
 import { SettingsPage } from '../pages/SettingsPage';
 import { StatusPage } from '../pages/StatusPage';
@@ -38,6 +39,7 @@ export function AuthGate() {
     <Layout auth={auth.data}>
       <Routes>
         <Route path="/backups/:runId" element={<BackupPage />} />
+        <Route path="/restore/:runId/:app" element={<RestorePage />} />
         <Route path="/backups" element={<BackupsPage />} />
         <Route path="/apps" element={<AppsPage />} />
         <Route path="/settings" element={<SettingsPage />} />

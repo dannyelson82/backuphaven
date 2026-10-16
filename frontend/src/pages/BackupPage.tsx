@@ -129,6 +129,15 @@ export function BackupPage() {
                     <Stack gap="xs">
                       <Group>
                         <Button
+                          component={Link}
+                          to={`/restore/${runId}/${encodeURIComponent(app.name)}`}
+                          size="xs"
+                          color="orange"
+                          variant="light"
+                        >
+                          Restore {app.name}…
+                        </Button>
+                        <Button
                           component="a"
                           href={downloadUrl.app(runId, app.key)}
                           size="xs"

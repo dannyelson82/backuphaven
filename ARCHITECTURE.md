@@ -79,7 +79,8 @@ A run, step by step:
 
 1. **Discover** apps from the Unraid templates (`/boot/config/plugins/dockerMan/templates-user/*.xml`):
    container name, image, appdata folders. Each app is matched to a plugin by
-   image name; apps with no plugin get the **generic plugin**.
+   image name; apps with no plugin of their own aren't backed up (plugins only,
+   ADR-0013).
 2. **For each app in the backup schedule** (empty by default; ADR-0011), in the configured order, the plugin's backup steps
    run through the plugin host:
    - snapshot mode: live-copy each SQLite database, then copy the other files;
@@ -241,15 +242,19 @@ restore:
   stop_first: true
 ```
 
-**Bundled plugins in v1:** generic, Sonarr, Radarr, Prowlarr, Lidarr/Readarr
+**Plugins only (ADR-0013).** Each app is backed up by a plugin made for it, which
+promises a complete, restorable copy; every bundled plugin ships a fixture that CI
+backs up, wipes and restores. Recipe plugins can also be put in
+`<config>/plugins/` to try them before a release (marked *local*). A **plugin
+development file** generated from the Apps page lets an AI coder write a new
+plugin and open a pull request.
+
+**Bundled plugins in v1:** Sonarr, Radarr, Prowlarr, Lidarr/Readarr
 (as fitting), Plex, SABnzbd, qBittorrent, Home Assistant (container), MariaDB
 and PostgreSQL (stop mode until a dump plugin exists), BackupHaven itself.
 The exact list is set per phase.
 
-**The generic plugin** backs up the app's whole appdata folder, finds SQLite
-databases by their file header (`SQLite format 3\0`) and snapshots and checks
-them. It skips common cache and log folders. Apps without a dedicated plugin are
-therefore never unprotected.
+(The generic plugin of the first design was removed by ADR-0013.)
 
 **Program plugins** speak a small JSON message protocol over stdin/stdout to the
 plugin host (one request, one reply). They can be written in any language. They

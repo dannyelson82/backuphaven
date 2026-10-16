@@ -5,9 +5,8 @@ from pathlib import Path
 from backuphaven import retention
 from backuphaven.config import Settings
 from backuphaven.db import Database, Run
-from backuphaven.plugins.registry import bundled
 from backuphaven.runner import Runner
-from tests.test_runner import db, unraid  # noqa: F401 - fixtures
+from tests.test_runner import db, plugins_of, unraid  # noqa: F401 - fixtures
 
 
 def files(folder: Path) -> list[str]:
@@ -21,7 +20,7 @@ def keep(db: Database, **values: float) -> None:
 
 def test_old_backups_are_deleted_after_a_run(unraid: Settings, db: Database) -> None:
     keep(db, nightly=1, weekly=0, monthly=0, min_free_gb=0)
-    runner = Runner(db, unraid, bundled())
+    runner = Runner(db, unraid, plugins_of(unraid))
     first = runner.run_now(only=["Tool"], scheduled=True)
     (unraid.backups_dir / "my-own-notes.tar.zst").write_text("not ours")
     second = runner.run_now(only=["Tool"], scheduled=True)
@@ -38,7 +37,7 @@ def test_an_app_taken_out_of_the_schedule_keeps_its_last_good_copy(
     db: Database,
 ) -> None:
     keep(db, nightly=1, weekly=0, monthly=0, min_free_gb=0)
-    runner = Runner(db, unraid, bundled())
+    runner = Runner(db, unraid, plugins_of(unraid))
     both = runner.run_now(only=["Tool", "sonarr"], scheduled=True)
     newer = runner.run_now(only=["sonarr"], scheduled=True)
     with db.read() as session:
@@ -52,7 +51,7 @@ def test_an_app_taken_out_of_the_schedule_keeps_its_last_good_copy(
 
 def test_the_owners_minimum_free_space_stops_a_run(unraid: Settings, db: Database) -> None:
     keep(db, min_free_gb=100_000)  # 100 TB: more than any test disk
-    run_id = Runner(db, unraid, bundled()).run_now(only=["Tool"])
+    run_id = Runner(db, unraid, plugins_of(unraid)).run_now(only=["Tool"])
     with db.read() as session:
         run = session.get(Run, run_id)
     assert run is not None and run.status == "failed" and "free space" in (run.error or "")

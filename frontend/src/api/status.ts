@@ -126,7 +126,10 @@ export function useCancelRun() {
 export interface DiscoveredApp {
   name: string;
   image: string;
-  plugin: string;
+  // null: no plugin yet, so the app can't be backed up.
+  plugin: string | null;
+  plugin_name?: string | null;
+  plugin_local?: boolean;
   folders: { target: string; host: string; share: string }[];
   missing: { target: string; host: string; share: string }[];
   scheduled: boolean;

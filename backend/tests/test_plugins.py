@@ -92,7 +92,8 @@ def test_malformed_manifests(text: str) -> None:
 def test_every_bundled_plugin_is_valid() -> None:
     files = sorted(p.stem for p in BUNDLED_DIR.glob("*.yaml"))
     assert sorted(load_folder(BUNDLED_DIR)) == files
-    assert {"generic", "sonarr", "radarr", "prowlarr", "plex", "backuphaven"} <= set(files)
+    assert {"sonarr", "radarr", "prowlarr", "plex", "backuphaven", "planhaven"} <= set(files)
+    assert "generic" not in files
 
 
 # --- matching ---------------------------------------------------------------------------
@@ -120,13 +121,15 @@ def test_image_name(image: str, name: str) -> None:
         ("lscr.io/linuxserver/plex", "plex"),
         ("plexinc/pms-docker:latest", "plex"),
         ("ghcr.io/dannyelson82/backuphaven:edge", "backuphaven"),
-        ("lscr.io/linuxserver/sonarr-extended", "generic"),  # not Sonarr itself
-        ("mariadb", "generic"),
-        ("", "generic"),
+        ("lscr.io/linuxserver/sonarr-extended", None),  # not Sonarr itself
+        ("mariadb", None),
+        ("", None),
     ],
 )
-def test_apps_match_their_plugin_or_the_generic_one(image: str, plugin: str) -> None:
-    assert bundled().match(image).id == plugin
+def test_apps_match_their_plugin_or_none(image: str, plugin: str | None) -> None:
+    """Plugins only (ADR-0013): no plugin, no backup."""
+    found = bundled().match(image)
+    assert (found.id if found else None) == plugin
 
 
 # --- rules and selection ----------------------------------------------------------------
@@ -234,7 +237,7 @@ def test_could_contain(folder: str, patterns: tuple[str, ...], expected: bool) -
     assert could_contain(folder, patterns) is expected
 
 
-def test_generic_plugin_finds_databases_by_their_header(tmp_path: Path) -> None:
+def test_auto_databases_are_found_by_their_header(tmp_path: Path) -> None:
     root = tmp_path / "app"
     make_db(root / "data" / "store.sqlite")
     make_db(root / "weird-name.bin")
@@ -242,7 +245,16 @@ def test_generic_plugin_finds_databases_by_their_header(tmp_path: Path) -> None:
     write(root / "notes.db", "not really sqlite")
     write(root / "cache" / "x")
     write(root / "logs" / "app.log")
-    selection = select(root, effective_rules(bundled().plugins["generic"]))
+    selection = select(
+        root,
+        effective_rules(
+            parse_manifest(
+                MINIMAL
+                + 'backup: {folder: "*", databases: auto, include: ["**"],\n'
+                + '  exclude: ["cache/**", "logs/**"]}\n'
+            )
+        ),
+    )
     assert sorted(e.rel for e in selection.databases) == ["data/store.sqlite", "weird-name.bin"]
     assert sorted(e.rel for e in selection.files) == ["notes.db", "settings.json"]
 
@@ -281,3 +293,27 @@ def test_data_folders_must_stay_inside_their_share(tmp_path: Path) -> None:
     assert ok == (data_root / "appdata" / "sonarr").resolve()
     with pytest.raises(OutsideShareError):
         resolve_app_folder(data_root, "/mnt/user/appdata/escape")
+
+
+def test_local_plugins_appear_without_a_restart_and_can_replace_bundled_ones(
+    tmp_path: Path,
+) -> None:
+    from backuphaven.plugins.registry import PluginStore
+
+    store = PluginStore(tmp_path / "plugins")
+    assert store.match("someone/newapp") is None
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "newapp.yaml").write_text(
+        MINIMAL.replace("id: demo", "id: newapp") + 'recognise: {images: ["someone/newapp"]}\n'
+    )
+    found = store.match("someone/newapp")
+    assert found is not None and found.id == "newapp" and "newapp" in store.local
+    # A local copy of a bundled plugin wins, so an improved one can be tried.
+    (tmp_path / "plugins" / "sonarr.yaml").write_text(
+        MINIMAL.replace("id: demo", "id: sonarr").replace("Demo", "Sonarr (trying)")
+        + 'recognise: {images: ["*/sonarr"]}\n'
+    )
+    sonarr = store.match("lscr.io/linuxserver/sonarr")
+    assert sonarr is not None and sonarr.name == "Sonarr (trying)"
+    (tmp_path / "plugins" / "broken.yaml").write_text("id: Not Valid\n")
+    assert store.match("someone/newapp") is not None  # a bad file is skipped

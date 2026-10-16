@@ -120,3 +120,29 @@ it('offers the backups that hold an app when restoring it', async () => {
   await userEvent.click(choices[0]);
   expect(await screen.findByRole('heading', { name: 'Restore sonarr' })).toBeInTheDocument();
 });
+
+it('shows apps without a plugin and stops them being added', async () => {
+  mockApi({
+    'GET auth/state': LOGGED_IN,
+    'GET status': { body: EMPTY_STATUS },
+    'GET apps/discovered': {
+      body: {
+        data_shares: ['appdata'],
+        templates_found: true,
+        scheduled: [],
+        apps: [
+          app('mystery', { plugin: null, plugin_name: null, image: 'someone/mystery' }),
+          app('newthing', { plugin: 'newthing', plugin_name: 'New Thing', plugin_local: true }),
+        ],
+      },
+    },
+  });
+  window.location.hash = '#/apps';
+  render(<App />);
+  expect(await screen.findByText('No plugin yet')).toBeInTheDocument();
+  expect(screen.getByText('Local plugin')).toBeInTheDocument();
+  expect(screen.getByText(/Plugin New Thing/)).toBeInTheDocument();
+  const [mysteryAdd, newAdd] = screen.getAllByRole('button', { name: 'Add to backup schedule' });
+  expect(mysteryAdd).toBeDisabled();
+  expect(newAdd).toBeEnabled();
+});

@@ -52,9 +52,17 @@ jobs:
             '</Container>' > smoke/templates/my-demo.xml
           echo '{"setting": true}' > smoke/appdata/demo/settings.json
           sudo chown -R 99:100 smoke/appdata
+          # Plugins only (ADR-0013): the demo app gets a local plugin.
+          mkdir -p smoke/plugins
+          printf '%s\n' 'id: demo' 'name: Demo' 'version: 1.0.0' 'kind: app' 'plugin_api: 1' \
+            'author: CI' 'recognise: {images: ["example/demo"]}' \
+            'backup: {folder: /config, include: ["**"], expect: ["settings.json"]}' \
+            > smoke/plugins/demo.yaml
+          sudo chown -R 99:100 smoke/plugins
           docker run -d --name bh -p 7272:7272 \
             -v "$PWD/smoke/templates:/boot/config/plugins/dockerMan/templates-user:ro" \
             -v "$PWD/smoke/appdata:/mnt/user/appdata" \
+            -v "$PWD/smoke/plugins:/config/plugins" \
             backuphaven:ci
           for _ in $(seq 1 30); do
             status="$(docker inspect -f '{{.State.Health.Status}}' bh)"
@@ -73,7 +81,8 @@ jobs:
           curl -fsS -b "$jar" -c "$jar" -H "X-CSRF-Token: $csrf" -H 'Content-Type: application/json' \
             -d '{"username":"admin","password":"smoke test password"}' http://127.0.0.1:7272/api/v1/setup >/dev/null
           curl -fsS -b "$jar" http://127.0.0.1:7272/api/v1/plugins | tee plugins.json | head -c 300; echo
-          for id in generic sonarr radarr prowlarr plex backuphaven; do grep -q "\"id\":\"$id\"" plugins.json; done
+          for id in sonarr radarr prowlarr plex backuphaven planhaven demo; do grep -q "\"id\":\"$id\"" plugins.json; done
+          ! grep -q "\"id\":\"generic\"" plugins.json
           # Nothing is backed up until an app is in the backup schedule (ADR-0011).
           test "$(curl -s -o /dev/null -w '%{http_code}' -b "$jar" -H "X-CSRF-Token: $csrf" \
             -X POST http://127.0.0.1:7272/api/v1/runs)" = 409
@@ -88,7 +97,7 @@ jobs:
           done
           cat run.json; echo
           grep -q '"verified":true' run.json
-          grep -q '"app":"demo","plugin":"generic","status":"ok","files":1' run.json
+          grep -q '"app":"demo","plugin":"demo","status":"ok","files":1' run.json
           docker exec bh sh -c 'stat -c "%u:%g %a %n" /backups/backuphaven-*.tar.zst*' | tee archive.txt
           test "$(grep -c '^99:100 600 ' archive.txt)" = 2
           # Root inside the container, but only the capabilities ADR-0006 allows:

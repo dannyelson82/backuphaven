@@ -48,7 +48,7 @@ def test_switching_on_writes_debug_log_run_file_and_system_info(unraid: Settings
     assert run["only"] == ["plex"] and run["apps"][0]["name"] == "plex"
     assert run["apps"][0]["databases"][0]["timing"]["copy_seconds"] >= 0
     system = json.loads((folder / "system.json").read_text())
-    assert system["data_shares"] == ["appdata", "fast", "media"]
+    assert system["data_shares"] == ["appdata", "fast"]
     assert "sqlite" in system and "capabilities" in system
     assert oct((folder / "debug.log").stat().st_mode & 0o777) == "0o640"
 

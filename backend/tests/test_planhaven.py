@@ -7,12 +7,11 @@ import pytest
 from backuphaven import discovery, retention
 from backuphaven.config import Settings
 from backuphaven.db import Database, Restore, RunApp
-from backuphaven.plugins.registry import bundled
 from backuphaven.restore import ASIDE_DIR, Restorer
 from backuphaven.runner import Runner
 from tests.test_discovery import template_xml
 from tests.test_restore import tree
-from tests.test_runner import contents, db, unraid  # noqa: F401 - fixtures
+from tests.test_runner import contents, db, plugins_of, unraid  # noqa: F401 - fixtures
 
 
 def write(path: Path, text: str = "x") -> None:
@@ -76,7 +75,9 @@ def test_discovery_keeps_whole_shares_for_plugins_to_claim(planhaven: Settings) 
 def test_backup_takes_settings_dumps_and_attachments_but_not_live_pgdata(
     planhaven: Settings, db: Database
 ) -> None:
-    run_id = Runner(db, planhaven, bundled()).run_now(only=["planhaven"], scheduled=True)
+    run_id = Runner(db, planhaven, plugins_of(planhaven)).run_now(
+        only=["planhaven"], scheduled=True
+    )
     with db.read() as session:
         app = session.query(RunApp).filter_by(run_id=run_id).one()
     assert app.status == "ok", app.problems
@@ -93,7 +94,9 @@ def test_missing_dumps_fail_the_backup(planhaven: Settings, db: Database) -> Non
     (
         planhaven.data_root / "appdata" / "planhaven" / "backups" / "planhaven-20261016-030000.dump"
     ).unlink()
-    run_id = Runner(db, planhaven, bundled()).run_now(only=["planhaven"], scheduled=True)
+    run_id = Runner(db, planhaven, plugins_of(planhaven)).run_now(
+        only=["planhaven"], scheduled=True
+    )
     with db.read() as session:
         app = session.query(RunApp).filter_by(run_id=run_id).one()
     assert app.status == "failed"
@@ -104,7 +107,7 @@ def test_a_database_server_folder_in_any_app_is_flagged(unraid: Settings, db: Da
     tool = unraid.data_root / "appdata" / "tool"
     write(tool / "db" / "PG_VERSION", "16")
     write(tool / "db" / "global" / "pg_control", "x")
-    run_id = Runner(db, unraid, bundled()).run_now(only=["Tool"], scheduled=True)
+    run_id = Runner(db, unraid, plugins_of(unraid)).run_now(only=["Tool"], scheduled=True)
     with db.read() as session:
         app = session.query(RunApp).filter_by(run_id=run_id).one()
     assert app.status == "warning"
@@ -114,7 +117,7 @@ def test_a_database_server_folder_in_any_app_is_flagged(unraid: Settings, db: Da
 def test_restore_brings_back_attachments_and_keeps_the_live_database(
     planhaven: Settings, db: Database
 ) -> None:
-    runner = Runner(db, planhaven, bundled())
+    runner = Runner(db, planhaven, plugins_of(planhaven))
     run_id = runner.run_now(only=["planhaven"], scheduled=True)
     share = planhaven.data_root / "planhaven"
     config = planhaven.data_root / "appdata" / "planhaven"
@@ -127,7 +130,7 @@ def test_restore_brings_back_attachments_and_keeps_the_live_database(
     broken_share, broken_config = tree(share), tree(config)
 
     restorer = Restorer(
-        db, planhaven, bundled(), runner.lock, quiet_seconds=0, sleep=lambda _s: None
+        db, planhaven, plugins_of(planhaven), runner.lock, quiet_seconds=0, sleep=lambda _s: None
     )
     restore_id = restorer.run(run_id, "planhaven")
     with db.read() as session:
@@ -148,6 +151,6 @@ def test_restore_brings_back_attachments_and_keeps_the_live_database(
 
 def test_backups_never_include_set_aside_folders(planhaven: Settings, db: Database) -> None:
     write(planhaven.data_root / "planhaven" / ASIDE_DIR / "old" / "x.pdf", "old")
-    Runner(db, planhaven, bundled()).run_now(only=["planhaven"], scheduled=True)
+    Runner(db, planhaven, plugins_of(planhaven)).run_now(only=["planhaven"], scheduled=True)
     archive = next(planhaven.backups_dir.glob("backuphaven-*.tar.zst"))
     assert not any(ASIDE_DIR in n for n in contents(archive))

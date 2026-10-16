@@ -24,7 +24,7 @@ def _wait(app) -> None:  # type: ignore[no-untyped-def]
         time.sleep(0.05)
 
 
-def test_switching_on_writes_debug_log_run_file_and_system_info(unraid: Settings) -> None:  # noqa: F811
+def test_switching_on_writes_debug_log_run_file_and_system_info(unraid: Settings) -> None:
     settings = unraid.model_copy(update={"diagnostics_dir": unraid.config_dir / "diag"})
     app = create_app(settings, gateways=frozenset())
     with TestClient(app):
@@ -53,7 +53,7 @@ def test_switching_on_writes_debug_log_run_file_and_system_info(unraid: Settings
     assert oct((folder / "debug.log").stat().st_mode & 0o777) == "0o640"
 
 
-def test_the_choice_is_kept_across_restarts_and_can_be_switched_off(unraid: Settings) -> None:  # noqa: F811
+def test_the_choice_is_kept_across_restarts_and_can_be_switched_off(unraid: Settings) -> None:
     settings = unraid.model_copy(update={"diagnostics_dir": unraid.config_dir / "diag"})
     app = create_app(settings, gateways=frozenset())
     with TestClient(app):
@@ -67,7 +67,7 @@ def test_the_choice_is_kept_across_restarts_and_can_be_switched_off(unraid: Sett
     assert logging.getLogger("backuphaven").level == logging.NOTSET
 
 
-def test_needs_login(unraid: Settings) -> None:  # noqa: F811
+def test_needs_login(unraid: Settings) -> None:
     app = create_app(unraid, gateways=frozenset())
     with TestClient(app):
         admin_client(app)
@@ -76,7 +76,7 @@ def test_needs_login(unraid: Settings) -> None:  # noqa: F811
         assert stranger.put(DEV, json={"diagnostics": True}).status_code in (401, 403)
 
 
-def test_only_the_newest_run_files_are_kept(tmp_path: Path, unraid: Settings) -> None:  # noqa: F811
+def test_only_the_newest_run_files_are_kept(tmp_path: Path, unraid: Settings) -> None:
     diagnostics = Diagnostics(unraid.model_copy(update={"diagnostics_dir": tmp_path / "d"}))
     diagnostics.enable()
     try:
@@ -88,7 +88,7 @@ def test_only_the_newest_run_files_are_kept(tmp_path: Path, unraid: Settings) ->
     assert runs == list(range(4, KEEP_RUNS + 4))
 
 
-def test_secrets_never_reach_the_files(tmp_path: Path, unraid: Settings) -> None:  # noqa: F811
+def test_secrets_never_reach_the_files(tmp_path: Path, unraid: Settings) -> None:
     SecretRegistry.register("supersecretvalue123")
     diagnostics = Diagnostics(unraid.model_copy(update={"diagnostics_dir": tmp_path / "d"}))
     diagnostics.enable()
@@ -102,7 +102,7 @@ def test_secrets_never_reach_the_files(tmp_path: Path, unraid: Settings) -> None
         assert "supersecretvalue123" not in (tmp_path / "d" / name).read_text()
 
 
-def test_debug_lines_stay_out_of_the_normal_log(tmp_path: Path, unraid: Settings) -> None:  # noqa: F811
+def test_debug_lines_stay_out_of_the_normal_log(tmp_path: Path, unraid: Settings) -> None:
     configure_logging("info", tmp_path / "logs", 1 << 20, 1)
     diagnostics = Diagnostics(unraid.model_copy(update={"diagnostics_dir": tmp_path / "d"}))
     diagnostics.enable()

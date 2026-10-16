@@ -86,6 +86,8 @@ class AppResult:
     name: str
     plugin: str
     key: str = ""  # its folder inside the backup: apps/<key>/
+    # Each data folder: {"key": folder key in the backup, "target", "host"}.
+    folders: list[dict[str, str]] = field(default_factory=list)
     status: Status = "ok"
     files: int = 0
     bytes: int = 0
@@ -173,6 +175,11 @@ class Runner:
         self._lock = threading.Lock()
         self._cancel = threading.Event()
         self.progress: Progress | None = None
+
+    @property
+    def lock(self) -> threading.Lock:
+        """Held during a backup; restores take it too, so the two never overlap."""
+        return self._lock
 
     @property
     def running(self) -> bool:
@@ -395,6 +402,7 @@ class Runner:
                 {
                     "name": r.name,
                     "key": r.key,
+                    "folders": r.folders,
                     "plugin": r.plugin,
                     "status": r.status,
                     "files": r.files,
@@ -472,6 +480,7 @@ class Runner:
         result: AppResult,
     ) -> None:
         fkey = folder_key(folder.target)
+        result.folders.append({"key": fkey, "target": folder.target, "host": folder.host})
         try:
             root = resolve_app_folder(self._settings.data_root, folder.host)
         except (OutsideShareError, ValueError) as exc:

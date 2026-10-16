@@ -16,6 +16,7 @@ from backuphaven.api import (
     backup_routes,
     developer_routes,
     keeping_routes,
+    restore_routes,
     run_routes,
     schedule_routes,
     security_routes,
@@ -29,6 +30,7 @@ from backuphaven.diagnostics import SETTING_KEY, Diagnostics
 from backuphaven.headers import SecurityHeadersMiddleware
 from backuphaven.middleware import RequestLogMiddleware
 from backuphaven.plugins.registry import bundled
+from backuphaven.restore import Restorer
 from backuphaven.runner import Runner, remove_leftovers
 from backuphaven.scheduler import Scheduler
 from backuphaven.secretbox import SecretBox
@@ -101,7 +103,12 @@ def create_app(
     app.state.gateway_seen_at = None
     app.state.diagnostics = diagnostics
     app.state.runner = Runner(db, settings, bundled(), diagnostics)
-    app.state.scheduler = Scheduler(db, app.state.runner, settings)
+    app.state.restorer = Restorer(
+        db, settings, bundled(), app.state.runner.lock, settings.restore_quiet_s
+    )
+    app.state.scheduler = Scheduler(
+        db, app.state.runner, settings, housekeeping=app.state.restorer.expire
+    )
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestLogMiddleware)
 
@@ -121,6 +128,7 @@ def create_app(
         backup_routes,
         schedule_routes,
         keeping_routes,
+        restore_routes,
         developer_routes,
     ):
         app.include_router(module.router, prefix="/api/v1")

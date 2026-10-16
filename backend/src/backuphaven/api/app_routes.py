@@ -3,6 +3,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
@@ -202,3 +203,30 @@ def plugins(request: Request, _principal: InteractiveDep) -> list[PluginView]:
         )
         for m in known.plugins.values()
     ]
+
+
+@router.get("/apps/{name}/plugin-brief")
+def plugin_brief(name: str, request: Request, db: DbDep, principal: InteractiveDep) -> Response:
+    """The plugin development file for one app (ADR-0013): Markdown for an AI coder."""
+    from backuphaven.plugins import brief
+
+    settings: Settings = request.app.state.settings
+    known: registry.PluginSource = request.app.state.plugins
+    found = {
+        a.name.lower(): a for a in discovery.discover(settings.templates_dir, settings.data_root)
+    }
+    app = found.get(name.lower())
+    if app is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "app_not_found")
+    plugin = known.match(app.image)
+    if plugin is not None:
+        app = discovery.with_plugin_shares(app, plugin.backup.share_folders)
+    text = brief.build(app, plugin, settings.data_root)
+    with db.write() as session:
+        audit.record(session, principal.actor, "plugin.brief", app.name)
+    safe = "".join(c if c.isalnum() or c in "-_" else "-" for c in app.name.lower())[:60]
+    return Response(
+        text,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="backuphaven-plugin-{safe}.md"'},
+    )

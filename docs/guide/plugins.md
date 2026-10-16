@@ -68,6 +68,30 @@ can't be copied safely while the app runs. The backup marks that app
 **Warnings** and says so; keep the app's own database dumps until stop mode
 arrives.
 
+## Getting a plugin made
+
+For an app marked **No plugin yet**, press **Make a plugin** on the Apps page.
+It downloads a **plugin development file** (`backuphaven-plugin-<app>.md`):
+everything an AI coding assistant (Claude Code or similar) needs to write the
+plugin, test it and send it to the BackupHaven project as a pull request:
+
+- the app's image and which of its folders hold app data;
+- a map of its data folders: folder and file names with sizes, which files are
+  SQLite databases, and which folders look like caches, logs or database
+  servers. **File contents are never included**, and nor are your share names
+  or server paths;
+- the full guide to writing a plugin, testing it and opening a pull request.
+
+Give the file to the assistant and ask it to follow it. Once the pull request is
+accepted, the plugin comes with the next release. To use it sooner, put the
+plugin file in the local plugins folder (below).
+
+Apps that already have a plugin show **Plugin file** instead: the same file,
+for improving that plugin.
+
+The folder map lists file and folder names from your server (up to three levels
+deep). Look through it before sharing the file with anyone.
+
 ## Trying a plugin before it's released
 
 Put a plugin file (`<name>.yaml`) in the `plugins` folder inside BackupHaven's

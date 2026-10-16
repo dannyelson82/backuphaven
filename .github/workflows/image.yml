@@ -56,6 +56,13 @@ jobs:
           curl -fsS http://127.0.0.1:7272/api/v1/version | grep -q '"name":"BackupHaven"'
           curl -fsS http://127.0.0.1:7272/api/v1/auth/state | grep -q '"setup_required":true'
           curl -fsS http://127.0.0.1:7272/ | grep -q '<title>BackupHaven</title>'
+          # Create the admin, then check the bundled plugins made it into the image.
+          jar="$(mktemp)"
+          csrf="$(curl -fsS -c "$jar" http://127.0.0.1:7272/api/v1/auth/state | sed -n 's/.*"csrf_token":"\([^"]*\)".*/\1/p')"
+          curl -fsS -b "$jar" -c "$jar" -H "X-CSRF-Token: $csrf" -H 'Content-Type: application/json' \
+            -d '{"username":"admin","password":"smoke test password"}' http://127.0.0.1:7272/api/v1/setup >/dev/null
+          curl -fsS -b "$jar" http://127.0.0.1:7272/api/v1/plugins | tee plugins.json | head -c 300; echo
+          for id in generic sonarr radarr prowlarr plex backuphaven; do grep -q "\"id\":\"$id\"" plugins.json; done
           # Root inside the container, but only the capabilities ADR-0006 allows:
           # chown, dac_override, fowner, fsetid, setgid, setuid = 0xdb; no new privileges.
           docker exec bh sh -c 'for p in /proc/[0-9]*; do

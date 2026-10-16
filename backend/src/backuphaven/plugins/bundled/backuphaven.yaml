@@ -1,0 +1,20 @@
+id: backuphaven
+name: BackupHaven
+version: 1.0.0
+kind: app
+plugin_api: 1
+author: BackupHaven
+description: >-
+  BackupHaven's own settings, so a rebuilt server gets its backup settings
+  back. Its backup files are never inside its own backup.
+recognise:
+  images: ["*/backuphaven", "backuphaven"]
+backup:
+  mode: snapshot
+  folder: /config
+  databases: ["backuphaven.db"]
+  include: ["**"]
+  exclude: ["logs/**"]
+  expect: ["backuphaven.db"]
+restore:
+  stop_first: true

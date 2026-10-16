@@ -1,0 +1,45 @@
+id: plex
+name: Plex Media Server
+version: 1.0.0
+kind: app
+plugin_api: 1
+author: BackupHaven
+description: >-
+  Plex's settings and its databases (libraries, watch history, play
+  positions). Posters, thumbnails and caches are skipped by default: Plex
+  rebuilds them, and they can be tens of gigabytes.
+recognise:
+  images: ["*/plex", "*/pms-docker", "plex", "plexinc/pms-docker"]
+backup:
+  mode: snapshot
+  folder: /config
+  databases:
+    - "Library/Application Support/Plex Media Server/Plug-in Support/Databases/*.db"
+  include:
+    - "Library/Application Support/Plex Media Server/Preferences.xml"
+    - "Library/Application Support/Plex Media Server/Plug-in Support/**"
+  exclude:
+    - "**/Cache/**"
+    - "**/Logs/**"
+    - "**/Crash Reports/**"
+    - "**/Codecs/**"
+    - "**/Updates/**"
+    - "**/Diagnostics/**"
+    # Plex's own dated database copies (.db-2026-10-10): large, and ours replace them.
+    - "**/Plug-in Support/Databases/*.db-[0-9]*"
+  expect:
+    - "Library/Application Support/Plex Media Server/Preferences.xml"
+    - "Library/Application Support/Plex Media Server/Plug-in Support/Databases/com.plexapp.plugins.library.db"
+settings:
+  - id: metadata
+    label: Include posters and metadata (large)
+    help: >-
+      Posters, artwork and thumbnails. Often tens of gigabytes; Plex downloads
+      or rebuilds them after a restore.
+    default: false
+    when_true:
+      include:
+        - "Library/Application Support/Plex Media Server/Metadata/**"
+        - "Library/Application Support/Plex Media Server/Media/**"
+restore:
+  stop_first: true

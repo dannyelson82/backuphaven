@@ -1,0 +1,40 @@
+id: radarr
+name: Radarr
+version: 1.0.0
+kind: app
+plugin_api: 1
+author: BackupHaven
+description: >-
+  Radarr's settings and database. Logs and downloaded posters are skipped; Radarr's
+  own backup copies are optional.
+recognise:
+  images: ["*/radarr", "radarr"]
+backup:
+  mode: snapshot
+  folder: /config
+  databases: ["radarr.db"]
+  include: ["**"]
+  exclude:
+    - "logs/**"
+    - "logs.db"
+    - "MediaCover/**"
+    - "Backups/**"
+    - "Sentry/**"
+    - "*.pid"
+    - "**/*.log"
+  expect: ["config.xml", "radarr.db"]
+settings:
+  - id: covers
+    label: Include posters
+    help: Posters and fan art. Radarr downloads them again if they're missing.
+    default: false
+    when_true:
+      include: ["MediaCover/**"]
+  - id: own_backups
+    label: Include Radarr's own backups
+    help: The zip files Radarr makes itself in its Backups folder.
+    default: false
+    when_true:
+      include: ["Backups/**"]
+restore:
+  stop_first: true

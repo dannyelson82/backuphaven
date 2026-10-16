@@ -41,3 +41,12 @@ def test_serves_the_built_frontend(tmp_path: Path) -> None:
     with TestClient(create_app(settings, gateways=frozenset())) as client:
         assert "<title>BackupHaven</title>" in client.get("/").text
         assert client.get("/healthz").json() == {"status": "ok"}  # API still wins
+
+
+def test_version_has_four_parts() -> None:
+    """Four-part version numbers (ADR-0012)."""
+    import re
+
+    from backuphaven import __version__
+
+    assert re.fullmatch(r"\d+\.\d+\.\d+\.\d+", __version__)

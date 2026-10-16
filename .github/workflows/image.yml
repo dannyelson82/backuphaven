@@ -3,7 +3,7 @@ name: Image
 on:
   push:
     branches: [main]
-    tags: ["v*.*.*"]
+    tags: ["v*.*.*.*"]  # four-part versions (ADR-0012)
   pull_request:
   workflow_dispatch:
 
@@ -114,7 +114,8 @@ jobs:
           images: ${{ env.IMAGE }}
           tags: |
             type=edge,branch=main
-            type=semver,pattern={{version}}
+            type=match,pattern=^v(\d+\.\d+\.\d+\.\d+)$,group=1
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=sha,format=short
 
       - name: Log in to GHCR

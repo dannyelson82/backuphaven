@@ -1,15 +1,16 @@
 # Phase 0.2: Every night
 
 Status: **approved by the owner on 2026-10-16** ("bundle everything into
-version 0.2 … and proceed"). There is no separate 0.1.0 release: phase 0.1 and
-the fixes from the owner's first tests ship in **0.2.0**.
+version 0.2 … and proceed"). There is no separate 0.1 release: phase 0.1 and
+the fixes from the owner's first tests ship in release **0.0.2.0** (four-part
+versions, ADR-0012).
 
 Goal: by the end of 0.2, BackupHaven backs up the apps the owner has added to
 the backup schedule every night on its own, keeps a sensible set of old
 backups and deletes the rest, never fills the disk, and has a Dashboard,
 Backups and Apps pages.
 
-## Already done during 0.1 testing (in 0.2.0)
+## Already done during 0.1 testing (in 0.0.2.0)
 
 Plex checks without its search add-on (#15); Choose apps, Cancel, start-up
 clean-up, Mac `._` files ignored (#16); per-database timings (#17); Settings →
@@ -25,7 +26,7 @@ removed apps skipped and listed at the end, ADR-0011 (#20).
 | 3 | **Keep rules** | Pure function with tests (ARCHITECTURE §6.8): 7 nightly, 4 weekly, 6 monthly; never delete the newest good backup or the last good copy of any database; failed ones go after the next good one. Applied after each run. Settings → Keeping backups, including minimum free space (moves from the environment variable to a setting) |
 | 4 | **Backups page** | Every backup file: date, result, size, apps, database checks, why it is kept. Delete one by hand (with confirmation; the last good copy of a database is protected). Download and restore come in 0.3 |
 | 5 | **Dashboard** | The status page grows into the Dashboard: last and next run, backup schedule summary, storage and free space, database health, anything needing attention at the top |
-| 6 | **Release 0.2.0** | Version, release notes, tag, `:latest` image, Unraid template default, owner test |
+| 6 | **Release 0.0.2.0** | Version, release notes, tag, `:latest` image, Unraid template default, owner test |
 
 ## Out of scope for 0.2
 

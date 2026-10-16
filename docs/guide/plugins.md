@@ -22,6 +22,9 @@ own plugin use **Any app**, so nothing is left unprotected.
 | **Sonarr**, **Radarr** | Settings (`config.xml`), the database, security keys | Logs, posters (`MediaCover`), the app's own backup zips | **Include posters**, **Include … own backups** |
 | **Prowlarr** | Settings, the database, indexer definitions | Logs, the app's own backup zips | **Include Prowlarr's own backups** |
 | **Plex Media Server** | Settings (`Preferences.xml`) and the databases: libraries, watch history, play positions | Posters, thumbnails, caches, logs, Plex's own dated database copies | **Include posters and metadata (large)** |
+| **Audiobookshelf** | The database (users, libraries, listening progress) and the metadata folder (covers, author pictures) | Cache, logs, Audiobookshelf's own backup files. The audiobooks themselves are media. | **Include Audiobookshelf's own backups** |
+| **Cantinarr** | Settings and the database | Logs | |
+| **Chaptarr** | Settings and the databases | Logs, its log and cache databases, posters, its own backup zips | **Include Chaptarr's own backups** |
 | **PlanHaven** | Settings, secrets, PlanHaven's own nightly database dumps (`backups/`), and the attachments share (`/data`) | The live database files (`pgdata`), logs | |
 | **BackupHaven** | BackupHaven's own settings, so a rebuilt server gets them back | Logs. Its backup files are never inside its own backup. | |
 

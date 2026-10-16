@@ -1,0 +1,35 @@
+id: chaptarr
+name: Chaptarr
+version: 1.0.0
+kind: app
+plugin_api: 1
+author: BackupHaven
+description: >-
+  Chaptarr's settings and databases. Logs, its log and cache databases, posters
+  and its own backup zips are skipped; Chaptarr rebuilds them.
+recognise:
+  images: ["*/chaptarr", "chaptarr"]
+backup:
+  mode: snapshot
+  folder: /config
+  databases: ["chaptarr.db", "staging.db"]
+  include: ["**"]
+  exclude:
+    - "logs/**"
+    - "logs.db"
+    - "cache.db"
+    - "MediaCover/**"
+    - "Backups/**"
+    - "Sentry/**"
+    - "*.pid"
+    - "**/*.log"
+  expect: ["chaptarr.db"]
+settings:
+  - id: own_backups
+    label: Include Chaptarr's own backups
+    help: The zip files Chaptarr makes itself in its Backups folder.
+    default: false
+    when_true:
+      include: ["Backups/**"]
+restore:
+  stop_first: true

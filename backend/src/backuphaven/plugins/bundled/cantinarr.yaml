@@ -1,0 +1,21 @@
+id: cantinarr
+name: Cantinarr
+version: 1.0.0
+kind: app
+plugin_api: 1
+author: BackupHaven
+description: >-
+  Cantinarr's settings and its database. Logs are skipped.
+recognise:
+  images: ["*/cantinarr", "cantinarr"]
+backup:
+  mode: snapshot
+  folder: /config
+  databases: ["cantinarr.db"]
+  include: ["**"]
+  exclude:
+    - "logs/**"
+    - "**/*.log"
+  expect: ["cantinarr.db"]
+restore:
+  stop_first: true

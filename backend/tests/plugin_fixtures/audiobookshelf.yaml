@@ -1,0 +1,22 @@
+plugin: audiobookshelf
+image: ghcr.io/advplyr/audiobookshelf:latest
+folders:
+  - target: /config
+    files:
+      migrations/0001.js: "migration"
+    sqlite: [absdatabase.sqlite]
+  - target: /metadata
+    files:
+      items/li_1/cover.jpg: "cover"
+      authors/aut_1.jpg: "author"
+      cache/covers/x.webp: "cached"
+      logs/daily/2026-10-16.txt: "log"
+      backups/2026-10-16.audiobookshelf: "own backup"
+must_restore:
+  - /config/absdatabase.sqlite
+  - /metadata/items/li_1/cover.jpg
+  - /metadata/authors/aut_1.jpg
+must_not_backup:
+  - /metadata/cache/covers/x.webp
+  - /metadata/logs/daily/2026-10-16.txt
+  - /metadata/backups/2026-10-16.audiobookshelf

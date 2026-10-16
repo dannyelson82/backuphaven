@@ -1,0 +1,33 @@
+id: audiobookshelf
+name: Audiobookshelf
+version: 1.0.0
+kind: app
+plugin_api: 1
+author: BackupHaven
+description: >-
+  Audiobookshelf's database (users, libraries, listening progress) from /config,
+  and its metadata (covers, author pictures) from /metadata. Its cache, logs and
+  its own backup files are skipped. The audiobooks themselves are media and are
+  not backed up.
+recognise:
+  images: ["*/audiobookshelf", "audiobookshelf"]
+backup:
+  mode: snapshot
+  folder: ["/config", "/metadata"]
+  databases: ["absdatabase.sqlite"]
+  include: ["**"]
+  exclude:
+    - "cache/**"
+    - "logs/**"
+    - "backups/**"
+    - "**/*.log"
+  expect: ["absdatabase.sqlite"]
+settings:
+  - id: own_backups
+    label: Include Audiobookshelf's own backups
+    help: The backup files Audiobookshelf makes itself in its metadata/backups folder.
+    default: false
+    when_true:
+      include: ["backups/**"]
+restore:
+  stop_first: true

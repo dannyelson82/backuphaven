@@ -80,7 +80,7 @@ class Backup(FileRules):
     mode: Literal["snapshot", "stop"] = "snapshot"
     # The app's data folder, as the app's container sees it. "*" = every data folder
     # (the generic plugin).
-    folder: Literal["*"] | ContainerPath = "/config"
+    folder: Literal["*"] | ContainerPath | list[ContainerPath] = "/config"
     # Container paths mapped to a *whole share* that holds the app's own data (e.g.
     # PlanHaven's attachments at /data). Whole shares are otherwise never backed up.
     share_folders: list[ContainerPath] = Field(default_factory=list, max_length=10)

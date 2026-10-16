@@ -106,7 +106,8 @@ def reasons(db: Database, tz_name: str | None, now: datetime | None = None) -> d
     return {run.id: decided[backup.name] for run, backup in found}
 
 
-def _is_ours(name: str) -> bool:
+def is_ours(name: str) -> bool:
+    """A plain BackupHaven backup file name, safe to join to the backups folder."""
     return (
         name.startswith(ARCHIVE_PREFIX)
         and name.endswith(ARCHIVE_SUFFIX)
@@ -119,7 +120,7 @@ def _is_ours(name: str) -> bool:
 def delete_backup(backups_dir: Path, run: Run) -> None:
     """Delete one backup file and its contents list, and mark the run."""
     name = str(run.archive)
-    if not _is_ours(name):
+    if not is_ours(name):
         raise ValueError(f"not a BackupHaven backup file: {name!r}")
     for path in (backups_dir / name, backups_dir / f"{name}{MANIFEST_SUFFIX}"):
         if path.is_symlink():

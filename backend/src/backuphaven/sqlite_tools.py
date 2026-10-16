@@ -50,6 +50,8 @@ class CheckResult:
     messages: tuple[str, ...] = ()
     # Collations the database uses that BackupHaven doesn't know (e.g. Plex's own).
     unknown_collations: tuple[str, ...] = field(default=())
+    # Search tables left out because they need an add-on BackupHaven doesn't have.
+    skipped_tables: tuple[str, ...] = field(default=())
 
 
 def _state(path: Path) -> tuple[int, int, bool]:
@@ -107,16 +109,60 @@ def _stub_collation(a: str, b: str) -> int:
     return (a > b) - (a < b)
 
 
+def _add_stub(conn: sqlite3.Connection, stubs: list[str], text: str) -> bool:
+    """Stand in for a collation the app has and BackupHaven doesn't, if that's the error."""
+    prefix = "no such collation sequence: "
+    if not text.startswith(prefix) or len(stubs) >= _MAX_STUB_COLLATIONS:
+        return False
+    stubs.append(text[len(prefix) :])
+    conn.create_collation(stubs[-1], _stub_collation)
+    return True
+
+
+def _needs_addon(text: str) -> bool:
+    return text.startswith(("unknown tokenizer", "no such module", "no such tokenizer"))
+
+
+def _check_tables(
+    conn: sqlite3.Connection, stubs: list[str]
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """``quick_check`` table by table, leaving out virtual tables (full-text search,
+    spellfix) whose add-on isn't loaded. Their data lives in ordinary shadow tables,
+    which are still checked. Returns the problems found and the tables left out."""
+    tables = conn.execute(
+        "SELECT name, sql FROM sqlite_schema WHERE type = 'table' ORDER BY name"
+    ).fetchall()
+    skipped = tuple(n for n, sql in tables if (sql or "").upper().startswith("CREATE VIRTUAL"))
+    problems: list[str] = []
+    for name, _sql in tables:
+        if name in skipped or len(problems) >= MAX_MESSAGES:
+            continue
+        quoted = '"' + name.replace('"', '""') + '"'
+        while True:
+            try:
+                rows = conn.execute(f"PRAGMA quick_check({quoted})").fetchall()
+                break
+            except sqlite3.OperationalError as exc:
+                if not _add_stub(conn, stubs, str(exc)):
+                    raise
+        problems += [str(r[0]) for r in rows if r[0] != "ok"]
+    return tuple(problems[:MAX_MESSAGES]), skipped
+
+
 def check(path: Path, timeout_s: float = 600.0, full_max_bytes: int = 8 << 30) -> CheckResult:
     """Check a snapshot for damage.
 
     ``integrity_check`` normally; ``quick_check`` (structure only) for very large
     databases, and for databases that use collations BackupHaven doesn't know, because
-    a stand-in collation would make the full check report false damage.
+    a stand-in collation would make the full check report false damage. If even that
+    needs an add-on (Plex's search index uses its own tokenizer), every table except
+    those search tables is checked on its own.
     """
     started = time.monotonic()
     deadline = started + timeout_s
     stubs: list[str] = []
+    skipped: tuple[str, ...] = ()
+    status: CheckStatus
     mode: Literal["full", "quick"] = "full" if path.stat().st_size <= full_max_bytes else "quick"
     messages: tuple[str, ...] = ()
     with closing(sqlite3.connect(_uri(path, immutable=True), uri=True)) as conn:
@@ -127,16 +173,24 @@ def check(path: Path, timeout_s: float = 600.0, full_max_bytes: int = 8 << 30) -
                 rows = conn.execute(f"PRAGMA {pragma}({MAX_MESSAGES})").fetchall()
             except sqlite3.OperationalError as exc:
                 text = str(exc)
-                prefix = "no such collation sequence: "
-                if text.startswith(prefix) and len(stubs) < _MAX_STUB_COLLATIONS:
-                    stubs.append(text[len(prefix) :])
-                    conn.create_collation(stubs[-1], _stub_collation)
+                if _add_stub(conn, stubs, text):
                     mode = "quick"
                     continue
                 if mode == "full" and "interrupted" not in text:
                     mode = "quick"  # e.g. an unknown full-text tokenizer
                     continue
-                status: CheckStatus = "unchecked"
+                if _needs_addon(text):
+                    try:
+                        messages, skipped = _check_tables(conn, stubs)
+                    except sqlite3.OperationalError as inner:
+                        text = str(inner)
+                    except sqlite3.DatabaseError as inner:
+                        status, messages = "damaged", (str(inner),)
+                        break
+                    else:
+                        status = "damaged" if messages else "ok"
+                        break
+                status = "unchecked"
                 messages = ("check took too long",) if "interrupted" in text else (text,)
                 break
             except sqlite3.DatabaseError as exc:
@@ -152,4 +206,5 @@ def check(path: Path, timeout_s: float = 600.0, full_max_bytes: int = 8 << 30) -
         seconds=time.monotonic() - started,
         messages=messages,
         unknown_collations=tuple(stubs),
+        skipped_tables=skipped,
     )

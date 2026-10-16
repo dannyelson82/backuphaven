@@ -43,6 +43,7 @@ it('shows the last backup, database health and app results', async () => {
             size: 900_000_000,
             messages: [],
             unknown_collations: ['naturalsort'],
+            skipped_tables: [],
           },
           {
             app: 'Tool',
@@ -52,6 +53,7 @@ it('shows the last backup, database health and app results', async () => {
             size: 1000,
             messages: ['row 3 missing from index'],
             unknown_collations: [],
+            skipped_tables: [],
           },
         ],
       },

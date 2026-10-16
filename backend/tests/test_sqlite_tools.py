@@ -153,3 +153,49 @@ def test_a_check_that_takes_too_long_is_unchecked_not_damaged(tmp_path: Path) ->
     result = check(tmp_path / "app.db", timeout_s=0)
     assert result.status == "unchecked"
     assert result.messages == ("check took too long",)
+
+
+def _plexlike_search_db(path: Path, damage: bool = False) -> None:
+    """Like Plex's: a full-text search table whose tokenizer only the app has, and an
+    index with the app's own sort order."""
+    con = sqlite3.connect(path)
+    con.create_collation("naturalsort", lambda a, b: (a > b) - (a < b))
+    con.execute("CREATE TABLE items (id INTEGER PRIMARY KEY, title TEXT)")
+    con.execute("CREATE INDEX items_title ON items(title)")
+    con.execute("CREATE INDEX items_sort ON items(title COLLATE naturalsort)")
+    con.executemany("INSERT INTO items(title) VALUES (?)", [(f"film {i}",) for i in range(300)])
+    con.execute("CREATE VIRTUAL TABLE search USING fts4(title)")
+    con.execute("INSERT INTO search(title) SELECT title FROM items")
+    con.commit()
+    con.execute("PRAGMA writable_schema = ON")
+    con.execute(
+        "UPDATE sqlite_schema SET sql = 'CREATE VIRTUAL TABLE search USING fts4(title, "
+        "tokenize=collating)' WHERE name = 'search'"
+    )
+    con.commit()
+    if damage:  # the index loses its entries; the table itself is intact
+        root = con.execute("SELECT rootpage FROM sqlite_schema WHERE name = 'items_title'")
+        page = int(root.fetchone()[0])
+        page_size = int(con.execute("PRAGMA page_size").fetchone()[0])
+    con.close()
+    if damage:
+        with path.open("r+b") as handle:
+            handle.seek((page - 1) * page_size + 3)
+            handle.write(b"\x00\x00")  # leaf page now claims to hold no cells
+
+
+def test_unknown_search_tokenizer_checks_every_other_table(tmp_path: Path) -> None:
+    _plexlike_search_db(tmp_path / "app.db")
+    result = check(tmp_path / "app.db")
+    assert result.status == "ok"
+    assert result.mode == "quick"
+    assert result.skipped_tables == ("search",)
+    assert result.unknown_collations == ("naturalsort",)
+
+
+def test_unknown_search_tokenizer_still_finds_damage_elsewhere(tmp_path: Path) -> None:
+    _plexlike_search_db(tmp_path / "app.db", damage=True)
+    result = check(tmp_path / "app.db")
+    assert result.status == "damaged"
+    assert result.skipped_tables == ("search",)
+    assert result.messages

@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     # Where archives are written (the built-in local destination).
     backups_dir: Path = Path(".dev-backups")
     web_dir: Path | None = None
+    # Unraid's container templates (read-only /boot mount in the container).
+    templates_dir: Path = Path("/boot/config/plugins/dockerMan/templates-user")
+    # Data shares are mounted here at their own host paths (ADR-0009).
+    data_root: Path = Path("/mnt/user")
     # Address of the optional socket proxy (ADR-0005); None: stop mode unavailable.
     docker_proxy: str | None = None
     host: str = "0.0.0.0"  # noqa: S104 - a container must listen on all interfaces

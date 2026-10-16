@@ -163,8 +163,10 @@ called BackupHaven), so a restored server gets its backup settings back too.
   `/mnt/user/<share>/...` (they are the same files on Unraid).
 - A mapping counts as the app's data when it is inside a **mounted data share**.
   Mappings into other shares (media, downloads, `/tmp`) are ignored.
-- If a mapping looks like app data (a `/config`-style container path) but its
-  share isn't mounted, the app is flagged **"data share not added"**, with the
+- A mapping of a whole share (e.g. `/mnt/user/media` → `/media`) is never app
+  data. A mapping "looks like app data" when its container path ends in `config`
+  (`/config`, `/app/config`, `/root/.config`...).
+- If a mapping looks like app data but its share isn't mounted, the app is flagged **"data share not added"**, with the
   exact path to add to BackupHaven's template. It is never silently skipped.
 - One app can have folders on several shares (e.g. config on `fast`,
   a database on `appdata`); all of them are backed up.

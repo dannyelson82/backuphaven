@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from backuphaven import __version__
-from backuphaven.api import auth_routes, security_routes
+from backuphaven.api import app_routes, auth_routes, security_routes
 from backuphaven.auth.network import IPAddress, read_default_gateways
 from backuphaven.auth.throttle import LoginThrottle
 from backuphaven.config import Settings, get_settings
@@ -70,7 +70,7 @@ def create_app(
     def version() -> Version:
         return Version(name="BackupHaven", version=__version__)
 
-    for module in (auth_routes, security_routes):
+    for module in (auth_routes, security_routes, app_routes):
         app.include_router(module.router, prefix="/api/v1")
 
     web_dir = settings.web_dir

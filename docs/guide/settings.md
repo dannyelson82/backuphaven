@@ -40,6 +40,11 @@ deleted.
 Where BackupHaven sends alerts, which ones, and the morning summary. See
 [Alerts](alerts.md).
 
+## Containers (socket proxy)
+
+Whether the optional socket proxy is set up and answering. See
+[The socket proxy](stop-mode.md).
+
 ## Developer
 
 ### Diagnostics files

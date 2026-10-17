@@ -1,6 +1,7 @@
 import { Alert, Card, Code, Loader, Stack, Switch, Table, Text, Title } from '@mantine/core';
 import { errorMessage } from '../api/client';
 import { AlertSettings } from '../components/AlertSettings';
+import { DockerSettings } from '../components/DockerSettings';
 import { KeepingSettings } from '../components/KeepingSettings';
 import { ScheduleSettings } from '../components/ScheduleSettings';
 import { useDeveloperSettings, useSetDiagnostics } from '../api/developer';
@@ -68,6 +69,7 @@ export function SettingsPage() {
       <ScheduleSettings />
       <KeepingSettings />
       <AlertSettings />
+      <DockerSettings />
       <Developer />
     </Stack>
   );

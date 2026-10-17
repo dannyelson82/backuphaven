@@ -105,6 +105,25 @@ class Run(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(default=None)
 
 
+class Alert(Base):
+    """One alert (ARCHITECTURE.md §6.10): what happened, and where it was sent."""
+
+    __tablename__ = "alerts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kind: Mapped[str] = mapped_column(String(32))  # run_failed, db_damaged, missed…
+    # Same key = same problem: not repeated while open, closed by "recovered".
+    key: Mapped[str] = mapped_column(String(255), index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    message: Mapped[str] = mapped_column(Text)
+    state: Mapped[str] = mapped_column(String(16))  # open | recovered | info
+    created_at: Mapped[datetime] = mapped_column(default=utcnow, index=True)
+    recovered_at: Mapped[datetime | None] = mapped_column(default=None)
+    last_sent_at: Mapped[datetime | None] = mapped_column(default=None)
+    # Per channel: {"<channel id>": "sent" | "failed: <reason>" | "off"}.
+    delivery: Mapped[dict[str, Any] | None] = mapped_column(default=None)
+
+
 class Restore(Base):
     """One app restored from one backup (ARCHITECTURE.md §6.9), and its undo."""
 

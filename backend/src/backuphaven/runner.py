@@ -16,7 +16,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from backuphaven import __version__, discovery, retention
 from backuphaven.archive import PARTIAL_SUFFIX, ArchiveWriter, folder_key, safe_name, verify
@@ -24,6 +24,9 @@ from backuphaven.config import Settings
 from backuphaven.db import Database, DbCheck, Run, RunApp
 from backuphaven.db.types import utcnow
 from backuphaven.diagnostics import Diagnostics
+
+if TYPE_CHECKING:
+    from backuphaven.alerts import AlertService
 from backuphaven.plugins.manifest import Manifest
 from backuphaven.plugins.registry import PluginSource
 from backuphaven.selection import OutsideShareError, effective_rules, resolve_app_folder, select
@@ -185,7 +188,9 @@ class Runner:
         settings: Settings,
         registry: PluginSource,
         diagnostics: Diagnostics | None = None,
+        alerts: "AlertService | None" = None,
     ) -> None:
+        self._alerts = alerts
         self._db = db
         self._diagnostics = diagnostics
         self._settings = settings
@@ -404,6 +409,42 @@ class Runner:
             retention.apply(self._db, self._settings.backups_dir, self._settings.tz)
         except Exception:
             logger.exception("keep rules failed; no backups were deleted by this step")
+
+    def _raise_alerts(self, status: str, results: list[AppResult], error: str | None) -> None:
+        """Alerts for a finished run (phase 0.4): failures, damaged databases, apps
+        without a plugin; and "recovered" for problems this run shows are gone."""
+        alerts = self._alerts
+        assert alerts is not None  # noqa: S101 - checked by the caller
+        for r in results:
+            if r.plugin == "-" and r.status == "failed":
+                alerts.raise_(
+                    "unprotected",
+                    f"unprotected:{r.name}",
+                    f"{r.name} is in the backup schedule but has no plugin, so it isn't "
+                    "backed up. Make one from the Apps page.",
+                )
+            elif r.status != "skipped":
+                alerts.resolve(f"unprotected:{r.name}", f"{r.name} has a plugin and is backed up.")
+            for d in r.databases:
+                key = f"db_damaged:{r.name}/{d['path']}"
+                if d.get("status") == "damaged":
+                    alerts.raise_(
+                        "db_damaged",
+                        key,
+                        f"{r.name}'s database {d['path']} is damaged: "
+                        f"{'; '.join(d.get('messages', [])[:2])}. Older backups may hold a "
+                        "healthy copy; look at the app soon.",
+                    )
+                elif d.get("status") == "ok":
+                    alerts.resolve(key, f"{r.name}'s database {d['path']} is healthy again.")
+        if status == "failed":
+            lines = [f"- {r.name}: {r.errors[0]}" for r in results if r.errors][:5]
+            detail = error or "\n".join(lines) or "see the Dashboard"
+            alerts.raise_("run_failed", "run_failed", f"The backup failed.\n{detail}")
+        else:
+            alerts.resolve("run_failed", "The latest backup worked.")
+            alerts.resolve("missed", "A scheduled backup ran again.")
+            alerts.resolve("no_good_backup", "There's a good backup again.")
 
     def _own(self, path: Path) -> None:
         if os.geteuid() == 0:
@@ -767,6 +808,11 @@ class Runner:
                 "archive": archive.name if archive else None,
             },
         )
+        if self._alerts is not None and status != "cancelled":
+            try:
+                self._raise_alerts(status, results, error)
+            except Exception:
+                logger.exception("alerts for this backup couldn't be recorded")
         if self._diagnostics is not None:
             self._diagnostics.write_run(
                 run_id,

@@ -14,13 +14,16 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from backuphaven import schedule, settings_store
 from backuphaven.config import Settings
 from backuphaven.db import Database
 from backuphaven.runner import Runner
 from backuphaven.timetable import last_due, next_due, zone
+
+if TYPE_CHECKING:
+    from backuphaven.alerts import AlertService
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +48,9 @@ class Scheduler:
         settings: Settings,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         housekeeping: Callable[[], object] | None = None,
+        alerts: "AlertService | None" = None,
     ) -> None:
+        self._alerts = alerts
         self._housekeeping = housekeeping
         self._db = db
         self._runner = runner
@@ -131,6 +136,9 @@ class Scheduler:
         logger.warning("scheduled backup missed", extra={"due": due.isoformat(), "reason": reason})
         missed = [{"due": due.isoformat(), "reason": reason}, *state.get("missed", [])]
         self._save_state({**state, "missed": missed[:KEEP_MISSED]})
+        if self._alerts is not None:
+            local = due.astimezone(self._tz).strftime("%a %d %b %H:%M")
+            self._alerts.raise_("missed", "missed", f"The backup due {local} didn't run: {reason}.")
 
     # --- for the API ----------------------------------------------------------------------
 

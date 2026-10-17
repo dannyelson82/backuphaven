@@ -31,6 +31,8 @@ goes missing quietly.
 | **Cantinarr** | Settings and the database | Logs | |
 | **Chaptarr** | Settings and the databases | Logs, its log and cache databases, posters, its own backup zips | **Include Chaptarr's own backups** |
 | **RomM** | Settings, assets (saves, save states, screenshots) and its MariaDB database (dumped while running) | Downloaded artwork and metadata, logs. The ROM library is media. | **Include downloaded artwork and metadata** |
+| **MariaDB / MySQL** (the server) | Every database on the server, copied while the container is stopped (needs the socket proxy) | Logs, PID and socket files | |
+| **PostgreSQL** (the server) | Every database on the server, copied while the container is stopped (needs the socket proxy) | Logs, PID file | |
 | **PlanHaven** | Settings, secrets, PlanHaven's own nightly database dumps (`backups/`), and the attachments share (`/data`) | The live database files (`pgdata`), logs | |
 | **BackupHaven** | BackupHaven's own settings, so a rebuilt server gets them back | Logs. Its backup files are never inside its own backup. | |
 

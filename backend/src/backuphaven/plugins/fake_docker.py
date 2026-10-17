@@ -1,4 +1,5 @@
-"""A fake socket proxy speaking a little of the Docker Engine API, for tests."""
+"""A fake socket proxy speaking a little of the Docker Engine API: for tests and
+for plugin fixtures of stop-mode plugins (no real Docker needed)."""
 
 import json
 import threading
@@ -14,6 +15,7 @@ class FakeDocker:
     containers: dict[str, dict[str, Any]] = field(default_factory=dict)  # name -> info
     calls: list[str] = field(default_factory=list)
     refuse: bool = False  # answer 403 like a proxy without START/STOP
+    fail_start: bool = False  # starting "works" but the container stays stopped
 
     def add(self, name: str, image: str, running: bool = True) -> str:
         cid = f"{abs(hash(name)):012x}"[:12].ljust(12, "0")
@@ -58,6 +60,8 @@ def fake_docker() -> Iterator[tuple[FakeDocker, str]]:
                 for info in docker.containers.values():
                     if info["Id"] == parts[1]:
                         new = "running" if parts[2] == "start" else "exited"
+                        if parts[2] == "start" and docker.fail_start:
+                            new = "exited"
                         if info["State"] == new:
                             self._send(304)
                             return

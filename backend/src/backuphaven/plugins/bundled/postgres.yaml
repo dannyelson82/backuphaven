@@ -1,0 +1,22 @@
+id: postgres
+name: PostgreSQL server
+version: 1.0.0
+kind: app
+plugin_api: 1
+author: BackupHaven
+description: >-
+  The whole database server: every database it holds. The container is stopped
+  during its backup (needs the socket proxy), because a database server's files
+  can't be copied safely while it runs.
+recognise:
+  images: ["*/postgres", "postgres", "*/postgresql", "postgresql"]
+backup:
+  mode: stop
+  # PostgreSQL 18+ images use /var/lib/postgresql; older ones its data subfolder.
+  folder: ["/var/lib/postgresql/data", "/var/lib/postgresql"]
+  include: ["**"]
+  exclude:
+    - "postmaster.pid"
+    - "log/**"
+restore:
+  stop_first: true

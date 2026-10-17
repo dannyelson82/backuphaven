@@ -7,8 +7,8 @@ from backuphaven.app import create_app
 from backuphaven.config import Settings
 from backuphaven.db import Database, RunApp
 from backuphaven.docker_proxy import DockerProxy, ProxyError, base_url
+from backuphaven.plugins.fake_docker import fake_docker
 from backuphaven.runner import Runner
-from tests.fake_docker import fake_docker
 from tests.helpers import API, admin_client
 from tests.test_runner import db, plugins_of, unraid  # noqa: F401 - fixtures
 

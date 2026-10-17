@@ -39,6 +39,7 @@ KINDS: dict[str, str] = {
     "disk_low": "Disk nearly full",
     "restore_failed": "Restore failed",
     "unprotected": "App not protected",
+    "container_down": "Container didn't start",
     "test": "Test",
     "summary": "Morning summary",
 }

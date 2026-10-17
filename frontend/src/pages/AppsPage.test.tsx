@@ -193,3 +193,25 @@ it('shows and changes where the database of an app is reached', async () => {
   const put = calls.find((c) => c.key === 'PUT apps/romm/databases/main');
   expect(JSON.parse(String(put?.init?.body))).toEqual({ host: '192.168.1.20', port: 3306 });
 });
+
+it('switches stop during backup for an app', async () => {
+  const calls = mockApi({
+    'GET auth/state': LOGGED_IN,
+    'GET status': { body: EMPTY_STATUS },
+    'GET apps/discovered': {
+      body: {
+        data_shares: ['appdata'],
+        templates_found: true,
+        scheduled: [],
+        apps: [app('mariadb', { mode: 'snapshot', container: 'running' })],
+      },
+    },
+    'PUT apps/mariadb/mode': { body: { mode: 'stop' } },
+  });
+  window.location.hash = '#/apps';
+  render(<App />);
+  await userEvent.click(await screen.findByRole('switch', { name: /Stop during backup/ }));
+  const put = calls.find((c) => c.key === 'PUT apps/mariadb/mode');
+  expect(JSON.parse(String(put?.init?.body))).toEqual({ mode: 'stop' });
+  expect(screen.getByText('Running')).toBeInTheDocument();
+});

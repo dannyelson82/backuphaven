@@ -30,6 +30,9 @@ At the top, **In the backup schedule** shows only the apps in the schedule and
 New containers don't join the schedule by themselves: add them when you
 install them.
 
+**Stop during backup** stops the app's container while it's backed up and
+starts it again afterwards (see [Stop mode](stop-mode.md)).
+
 **Restore…** (once an app has been backed up) puts its files back from a
 backup you choose; see [Restoring an app](restore.md).
 

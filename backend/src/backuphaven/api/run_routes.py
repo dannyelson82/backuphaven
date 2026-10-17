@@ -91,8 +91,17 @@ class MissedRunView(BaseModel):
     reason: str
 
 
+class OpenAlertView(BaseModel):
+    id: int
+    kind: str
+    title: str
+    message: str
+    since: datetime
+
+
 class StatusView(BaseModel):
     running: ProgressView | None
+    open_alerts: list[OpenAlertView] = []
     scheduled_apps: list[str] = []
     next_run: datetime | None = None
     # Scheduled backups missed since the last backup started.
@@ -262,6 +271,7 @@ def get_status(request: Request, db: DbDep, _principal: InteractiveDep) -> Statu
             phase=progress.phase,
         ),
         scheduled_apps=scheduled_apps,
+        open_alerts=[OpenAlertView(**a) for a in request.app.state.alerts.open_alerts()],
         next_run=scheduler.next_run(),
         missed=[
             MissedRunView(due=m.due, reason=m.reason)

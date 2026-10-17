@@ -35,6 +35,11 @@ Press **Save**. The new numbers are used after the next backup, when old backups
 are cleared out. See [Old backups](backing-up.md#old-backups) for what is never
 deleted.
 
+## Alerts
+
+Where BackupHaven sends alerts, which ones, and the morning summary. See
+[Alerts](alerts.md).
+
 ## Developer
 
 ### Diagnostics files

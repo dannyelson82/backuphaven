@@ -69,6 +69,7 @@ export interface Progress {
 export interface Status {
   running: Progress | null;
   scheduled_apps: string[];
+  open_alerts?: { id: number; kind: string; title: string; message: string; since: string }[];
   next_run: string | null;
   missed: { due: string; reason: string }[];
   last_run: Run | null;

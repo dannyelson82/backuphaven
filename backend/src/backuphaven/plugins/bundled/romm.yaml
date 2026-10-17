@@ -1,0 +1,42 @@
+id: romm
+name: RomM
+version: 1.0.0
+kind: app
+plugin_api: 1
+author: BackupHaven
+description: >-
+  RomM's settings, its assets (saves, save states, screenshots, uploads) and
+  its MariaDB database, dumped while RomM keeps running. Artwork and metadata
+  RomM downloads (/romm/resources) are optional. The ROM library itself is media
+  and isn't backed up.
+recognise:
+  images: ["*/romm", "romm"]
+backup:
+  mode: snapshot
+  folder: ["/romm/config", "/romm/assets", "/romm/resources"]
+  include: ["**"]
+  exclude:
+    - "**/*.log"
+    - "logs/**"
+    # /romm/resources: covers, screenshots and metadata RomM downloads again.
+    - "roms/**"
+    - "*/covers/**"
+  external_databases:
+    - id: main
+      engine: mariadb
+      host: "${DB_HOST}"
+      port: "${DB_PORT:-3306}"
+      database: "${DB_NAME:-romm}"
+      user: "${DB_USER:-romm-user}"
+      password: "${DB_PASSWD}"
+settings:
+  - id: resources
+    label: Include downloaded artwork and metadata
+    help: >-
+      Covers and screenshots RomM downloads from IGDB and others. They can be
+      large; RomM can download them again.
+    default: false
+    when_true:
+      include: ["roms/**", "*/covers/**"]
+restore:
+  stop_first: true

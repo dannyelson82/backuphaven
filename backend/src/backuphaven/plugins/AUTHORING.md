@@ -44,6 +44,18 @@ backup:
   # Files that must exist, or the backup fails (so a broken setup is noticed).
   # Checked across all of the app's folders.
   expect: ["config.xml", "myapp.db"]
+  # Databases the app keeps in a database server in ANOTHER container (MariaDB,
+  # PostgreSQL). BackupHaven dumps just this database over the network while
+  # everything runs, and loads it back on restore. Values use the app's Unraid
+  # template variables: ${NAME}, or ${NAME:-default}.
+  external_databases:
+    - id: main
+      engine: mariadb          # or postgres
+      host: "${DB_HOST}"
+      port: "${DB_PORT:-3306}"
+      database: "${DB_NAME:-myapp}"
+      user: "${DB_USER:-myapp}"
+      password: "${DB_PASSWD}"
 settings:                    # optional on/off choices for the owner
   - id: thumbnails
     label: Include thumbnails
@@ -102,6 +114,13 @@ must_not_backup: [/config/logs/myapp.txt, /config/thumbnails/1.jpg]
 
 `must_restore` lists what makes the app work; `must_not_backup` what is skipped.
 Use invented names and content only.
+
+For plugins with `external_databases`, add the template variables the app
+normally has (without real passwords) under `variables:`. The round trip then
+also puts sample rows in a real test database, backs it up, empties it and
+restores it. It needs a test server: `BH_TEST_MARIADB` or `BH_TEST_POSTGRES` set
+to `host:port:user:password` (the project's CI has both); without one, that
+part is skipped locally.
 
 ## 4. Check it
 

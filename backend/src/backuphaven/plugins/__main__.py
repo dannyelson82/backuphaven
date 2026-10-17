@@ -36,7 +36,11 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError) as exc:
         print(f"✗ {args.fixture}: {exc}")
         return 1
-    problems = fixture.round_trip(manifest, sample)
+    try:
+        problems = fixture.round_trip(manifest, sample)
+    except fixture.DatabaseServerMissingError as exc:
+        print(f"✗ {exc}")
+        return 1
     for problem in problems:
         print(f"✗ {problem}")
     if not problems:

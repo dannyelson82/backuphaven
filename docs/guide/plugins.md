@@ -30,6 +30,7 @@ goes missing quietly.
 | **Audiobookshelf** | The database (users, libraries, listening progress) and the metadata folder (covers, author pictures) | Cache, logs, Audiobookshelf's own backup files. The audiobooks themselves are media. | **Include Audiobookshelf's own backups** |
 | **Cantinarr** | Settings and the database | Logs | |
 | **Chaptarr** | Settings and the databases | Logs, its log and cache databases, posters, its own backup zips | **Include Chaptarr's own backups** |
+| **RomM** | Settings, assets (saves, save states, screenshots) and its MariaDB database (dumped while running) | Downloaded artwork and metadata, logs. The ROM library is media. | **Include downloaded artwork and metadata** |
 | **PlanHaven** | Settings, secrets, PlanHaven's own nightly database dumps (`backups/`), and the attachments share (`/data`) | The live database files (`pgdata`), logs | |
 | **BackupHaven** | BackupHaven's own settings, so a rebuilt server gets them back | Logs. Its backup files are never inside its own backup. | |
 

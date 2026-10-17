@@ -141,6 +141,18 @@ def _postgres_base(target: Target, tool: str) -> list[str]:
     ]
 
 
+def execute(target: Target, sql: str) -> str:
+    """Run SQL in the database and return the rows as text (plugin fixtures, checks)."""
+    _check_name(target.database, "database name")
+    if target.engine == "mariadb":
+        args = [*_mariadb_base(target, "mariadb"), "--batch", "--skip-column-names",
+                f"--execute={sql}", "--", target.database]  # fmt: skip
+    else:
+        args = [*_postgres_base(target, "psql"), "--tuples-only", "--no-align",
+                f"--command={sql}", f"--dbname={target.database}"]  # fmt: skip
+    return _run(args, target, QUERY_TIMEOUT_S)
+
+
 def dump(target: Target, dest: Path, timeout: float = DUMP_TIMEOUT_S) -> DumpResult:
     """Dump the database to ``dest`` (a new file BackupHaven owns) and check it."""
     for value, what in (

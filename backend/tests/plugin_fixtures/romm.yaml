@@ -1,0 +1,25 @@
+plugin: romm
+image: rommapp/romm:latest
+variables:
+  DB_HOST: mariadb
+  DB_NAME: romm
+folders:
+  - target: /romm/config
+    files:
+      config.yml: "exclude: {platforms: []}"
+  - target: /romm/assets
+    files:
+      users/a1/saves/snes/game.srm: "save data"
+      users/a1/states/snes/game.state: "state data"
+      users/a1/screenshots/game.png: "png"
+      logs/romm.log: "log"
+  - target: /romm/resources
+    files:
+      roms/12/34/cover/big.png: "cover"
+must_restore:
+  - /romm/config/config.yml
+  - /romm/assets/users/a1/saves/snes/game.srm
+  - /romm/assets/users/a1/states/snes/game.state
+must_not_backup:
+  - /romm/assets/logs/romm.log
+  - /romm/resources/roms/12/34/cover/big.png

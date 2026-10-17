@@ -25,17 +25,22 @@ keeps its promise for this sample.
 """
 
 import fnmatch
+import os
 import shutil
 import sqlite3
 import tempfile
 from pathlib import Path, PurePosixPath
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 from xml.sax.saxutils import escape
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from backuphaven.dbdump import DumpError, Target, execute
 from backuphaven.plugins.manifest import Manifest
+
+if TYPE_CHECKING:
+    from backuphaven.db import Database
 
 APP_SHARE = "appdata"
 SAMPLE_ROWS = 25
@@ -61,6 +66,16 @@ class Fixture(BaseModel):
     folders: list[FixtureFolder] = Field(min_length=1)
     must_restore: list[str] = Field(min_length=1)
     must_not_backup: list[str] = Field(default_factory=list)
+    # Template variables (Type="Variable"), e.g. what the app's real template sets.
+    variables: dict[str, str] = Field(default_factory=dict)
+
+
+class DatabaseServerMissingError(RuntimeError):
+    """The plugin has external databases and no test server is configured
+    (BH_TEST_MARIADB / BH_TEST_POSTGRES = host:port:user:password)."""
+
+
+TEST_SERVERS = {"mariadb": "BH_TEST_MARIADB", "postgres": "BH_TEST_POSTGRES"}
 
 
 def load(path: Path) -> Fixture:
@@ -73,11 +88,18 @@ def _host(app: str, folder: FixtureFolder) -> str:
     return f"/mnt/user/{APP_SHARE}/{app}" + folder.target.rstrip("/").replace("/", "-")
 
 
-def _template(app: str, image: str, folders: list[FixtureFolder]) -> str:
+def _template(app: str, image: str, folders: list[FixtureFolder], variables: dict[str, str]) -> str:
     configs = "\n".join(
-        f'  <Config Name="{escape(f.target)}" Target="{escape(f.target)}" Default="" Mode="rw" '
-        f'Type="Path">{escape(_host(app, f))}</Config>'
-        for f in folders
+        [
+            f'  <Config Name="{escape(f.target)}" Target="{escape(f.target)}" Default="" '
+            f'Mode="rw" Type="Path">{escape(_host(app, f))}</Config>'
+            for f in folders
+        ]
+        + [
+            f'  <Config Name="{escape(k)}" Target="{escape(k)}" Default="" Mode="" '
+            f'Type="Variable">{escape(v)}</Config>'
+            for k, v in variables.items()
+        ]
     )
     return (
         '<?xml version="1.0"?>\n<Container version="2">\n'
@@ -153,7 +175,10 @@ def round_trip(manifest: Manifest, fixture: Fixture) -> list[str]:
         templates.mkdir()
         data_root = base / "mnt-user"
         (data_root / APP_SHARE).mkdir(parents=True)
-        (templates / f"my-{app}.xml").write_text(_template(app, fixture.image, fixture.folders))
+        variables, servers = _database_variables(manifest, fixture)
+        (templates / f"my-{app}.xml").write_text(
+            _template(app, fixture.image, fixture.folders, variables)
+        )
         roots: dict[str, Path] = {}
         for folder in fixture.folders:
             root = data_root / PurePosixPath(_host(app, folder)).relative_to("/mnt/user")
@@ -180,6 +205,7 @@ def round_trip(manifest: Manifest, fixture: Fixture) -> list[str]:
             retention.save_settings(session, retention.KeepingSettings(min_free_gb=0))
         registry = Registry({app: manifest})
         runner = Runner(db, settings, registry)
+        seeded = _seed_databases(db, app, manifest, servers)
         run_id = runner.run_now(only=[app], scheduled=True)
         with db.read() as session:
             result = session.query(RunApp).filter_by(run_id=run_id).one_or_none()
@@ -224,6 +250,8 @@ def round_trip(manifest: Manifest, fixture: Fixture) -> list[str]:
                     ) if child.is_dir() and not child.is_symlink() else child.unlink()
             else:
                 shutil.rmtree(root)
+        for seed in seeded:  # a new server: the app's database is empty too
+            execute(seed, "DROP TABLE bh_fixture")
         restorer = Restorer(
             db, settings, registry, runner.lock, quiet_seconds=0, sleep=lambda _s: None
         )
@@ -246,4 +274,63 @@ def round_trip(manifest: Manifest, fixture: Fixture) -> list[str]:
             split = _must_split(item, fixture.folders)
             if (roots[split[0].target] / split[1]).exists():
                 problems.append(f"{item} came back after a restore from scratch")
+        for seed in seeded:
+            try:
+                rows = execute(seed, "SELECT count(*) FROM bh_fixture").strip()
+            except DumpError as exc:
+                problems.append(f"the {seed.engine} database wasn't restored: {exc}")
+                continue
+            if rows != str(SAMPLE_ROWS):
+                problems.append(f"the {seed.engine} database came back with {rows} rows")
+            execute(seed, "DROP TABLE bh_fixture")
     return problems
+
+
+def _database_variables(
+    manifest: Manifest, fixture: Fixture
+) -> tuple[dict[str, str], dict[str, tuple[str, int, str, str]]]:
+    """Template variables pointing the plugin's external databases at the test
+    servers. Raises DatabaseServerMissingError when a server isn't configured."""
+    from backuphaven import templating
+
+    variables = dict(fixture.variables)
+    servers: dict[str, tuple[str, int, str, str]] = {}
+    for spec in manifest.backup.external_databases:
+        value = os.environ.get(TEST_SERVERS[spec.engine])
+        if not value:
+            raise DatabaseServerMissingError(
+                f"the {spec.engine} part needs a test server: set {TEST_SERVERS[spec.engine]}"
+                "=host:port:user:password"
+            )
+        host, port, user, password = value.split(":", 3)
+        servers[spec.id] = (host, int(port), user, password)
+        for expression, real in (
+            (spec.host, host),
+            (spec.port, port),
+            (spec.user, user),
+            (spec.password, password),
+            (spec.database, "bhtest"),
+        ):
+            for name in templating.names(expression):
+                variables[name] = real
+    return variables, servers
+
+
+def _seed_databases(
+    db: "Database", app: str, manifest: Manifest, servers: dict[str, tuple[str, int, str, str]]
+) -> list[Target]:
+    """Point each external database at its test server and put sample rows in it."""
+    from backuphaven import external
+
+    targets: list[Target] = []
+    with db.write() as session:
+        for spec in manifest.backup.external_databases:
+            host, port, user, password = servers[spec.id]
+            external.save_override(session, app, spec.id, external.Address(host=host, port=port))
+            targets.append(Target(spec.engine, host, port, "bhtest", user, password))
+    for target in targets:
+        execute(target, "DROP TABLE IF EXISTS bh_fixture")
+        execute(target, "CREATE TABLE bh_fixture (id INT PRIMARY KEY, v VARCHAR(20))")
+        values = ", ".join(f"({i}, 'row {i}')" for i in range(SAMPLE_ROWS))
+        execute(target, f"INSERT INTO bh_fixture VALUES {values}")  # noqa: S608 - fixed sample rows
+    return targets

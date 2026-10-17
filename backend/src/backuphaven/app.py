@@ -12,6 +12,7 @@ from sqlalchemy import select
 from backuphaven import __version__, alert_channels, settings_store
 from backuphaven.alerts import AlertService, Channel
 from backuphaven.api import (
+    alert_routes,
     app_routes,
     auth_routes,
     backup_routes,
@@ -150,6 +151,7 @@ def create_app(
         backup_routes,
         schedule_routes,
         keeping_routes,
+        alert_routes,
         restore_routes,
         developer_routes,
     ):

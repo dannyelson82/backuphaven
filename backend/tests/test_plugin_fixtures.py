@@ -15,7 +15,11 @@ PLUGINS = sorted(bundled().plugins)
 def test_plugin_restores_its_app(plugin_id: str) -> None:
     path = FIXTURES / f"{plugin_id}.yaml"
     assert path.exists(), f"every plugin needs a fixture: tests/plugin_fixtures/{plugin_id}.yaml"
-    assert fixture.round_trip(bundled().plugins[plugin_id], fixture.load(path)) == []
+    try:
+        problems = fixture.round_trip(bundled().plugins[plugin_id], fixture.load(path))
+    except fixture.DatabaseServerMissingError as exc:
+        pytest.skip(str(exc))  # CI runs the database servers
+    assert problems == []
 
 
 def test_a_plugin_that_misses_a_file_is_caught(tmp_path: Path) -> None:

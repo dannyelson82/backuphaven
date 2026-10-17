@@ -9,8 +9,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from backuphaven import __version__, settings_store
-from backuphaven.alerts import AlertService
+from backuphaven import __version__, alert_channels, settings_store
+from backuphaven.alerts import AlertService, Channel
 from backuphaven.api import (
     app_routes,
     auth_routes,
@@ -101,13 +101,18 @@ def create_app(
     )
     app.state.settings = settings
     app.state.db = db
-    app.state.secrets = SecretBox(settings.config_dir)
     app.state.throttle = LoginThrottle()
     app.state.gateways = read_default_gateways() if gateways is None else gateways
     app.state.gateway_seen_at = None
     app.state.diagnostics = diagnostics
     app.state.plugins = PluginStore(settings.config_dir / LOCAL_DIR_NAME)
-    app.state.alerts = AlertService(db)
+    app.state.secrets = SecretBox(settings.config_dir)
+
+    def channels() -> list[Channel]:
+        with db.read() as session:
+            return list(alert_channels.live_channels(session, app.state.secrets))
+
+    app.state.alerts = AlertService(db, channels)
     app.state.runner = Runner(db, settings, app.state.plugins, diagnostics, app.state.alerts)
     app.state.restorer = Restorer(
         db,

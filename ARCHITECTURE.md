@@ -447,7 +447,7 @@ the repo for Community Applications.
 | **0.2 Every night** | Scheduler, keep rules, Dashboard, Backups and Apps pages, free-space guard |
 | **0.3 Restore** | Browse, download, restore an app with undo |
 | **0.4 Alerts** | Built-in alert channels, missed-run detection, morning summary |
-| **0.5 Stop mode** | Socket proxy support, per-app stop mode, one-click restore, MariaDB/PostgreSQL plugins |
+| **0.5 Databases and stop mode** | Databases in other containers dumped over the network (ADR-0014), socket proxy support, per-app stop mode, one-click restore, MariaDB/PostgreSQL plugins |
 | **0.6 Program plugins** | Sandbox, plugin host messages, permissions screen, install checks, signing; rclone destination plugin; encryption |
 | **0.7 Setup and extras** | Setup wizard, flash backup, second destination, plugin catalog |
 | **1.0** | Hardening, full guide, plugin author guide, Community Applications listing |

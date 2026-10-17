@@ -126,7 +126,8 @@ def _mariadb_base(target: Target, tool: str) -> list[str]:
         f"--user={target.user}",
         "--protocol=TCP",
         "--default-character-set=utf8mb4",
-        "--connect-timeout=15",
+        # Only the client takes a connect timeout; mariadb-dump refuses it.
+        *(["--connect-timeout=15"] if tool == "mariadb" else []),
     ]
 
 

@@ -1,0 +1,16 @@
+plugin: mariadb
+image: lscr.io/linuxserver/mariadb:latest
+folders:
+  - target: /config
+    files:
+      custom.cnf: "[mysqld]"
+      databases/ibdata1: "innodb"
+      databases/aria_log_control: "aria"
+      databases/romm/games.ibd: "table data"
+      databases/romm/db.opt: "options"
+      log/mysql/error.log: "log"
+must_restore:
+  - /config/custom.cnf
+  - /config/databases/ibdata1
+  - /config/databases/romm/games.ibd
+must_not_backup: [/config/log/mysql/error.log]

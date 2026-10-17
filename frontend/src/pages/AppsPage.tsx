@@ -7,16 +7,18 @@ import {
   Loader,
   Modal,
   SegmentedControl,
+  Switch,
   Stack,
   Text,
   TextInput,
   Title,
 } from '@mantine/core';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useBackups } from '../api/backups';
 import { DatabaseAddress } from '../components/DatabaseAddress';
-import { errorMessage } from '../api/client';
+import { api, errorMessage } from '../api/client';
 import {
   type DiscoveredApp,
   type RunStatus,
@@ -74,12 +76,14 @@ function AppRow({
   onToggle,
   onRestore,
   onDatabase,
+  onMode,
 }: {
   app: DiscoveredApp;
   busy: boolean;
   onToggle: () => void;
   onRestore: () => void;
   onDatabase: () => void;
+  onMode: (mode: 'snapshot' | 'stop') => void;
 }) {
   const last = app.last_backup;
   const result = last ? RESULT[last.status] : undefined;
@@ -129,6 +133,19 @@ function AppRow({
             {app.plugin === null ? app.image : `Plugin ${app.plugin_name ?? app.plugin}`}
             {app.folders.length > 0 && ` · ${app.folders.map((f) => f.host).join(', ')}`}
           </Text>
+          {app.plugin !== null && app.mode && (
+            <Switch
+              size="xs"
+              label="Stop during backup"
+              checked={app.mode === 'stop'}
+              onChange={(event) => onMode(event.currentTarget.checked ? 'stop' : 'snapshot')}
+              description={
+                app.mode === 'stop' && app.container === undefined
+                  ? 'Needs the socket proxy (Settings → Containers)'
+                  : undefined
+              }
+            />
+          )}
           {app.missing.length > 0 && (
             <Text size="xs" c="yellow.8">
               Data on the {app.missing[0].share} share, which BackupHaven can&apos;t see.
@@ -196,6 +213,15 @@ export function AppsPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [restoring, setRestoring] = useState<string | null>(null);
   const [databaseOf, setDatabaseOf] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const setMode = useMutation({
+    mutationFn: ({ name, mode }: { name: string; mode: 'snapshot' | 'stop' }) =>
+      api<{ mode: string }>(`apps/${encodeURIComponent(name)}/mode`, {
+        method: 'PUT',
+        body: JSON.stringify({ mode }),
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['apps', 'discovered'] }),
+  });
 
   const scheduled = discovered.data?.scheduled ?? [];
   // Until the owner chooses, show everything when nothing is scheduled yet.
@@ -277,6 +303,7 @@ export function AppsPage() {
                 onToggle={() => change(app.name, !app.scheduled)}
                 onRestore={() => setRestoring(app.name)}
                 onDatabase={() => setDatabaseOf(app.name)}
+                onMode={(mode) => setMode.mutate({ name: app.name, mode })}
               />
             ))}
           </Stack>

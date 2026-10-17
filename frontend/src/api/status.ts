@@ -133,6 +133,8 @@ export interface DiscoveredApp {
   plugin_local?: boolean;
   external_databases?: string[];
   container?: 'running' | 'stopped' | 'missing' | null;
+  mode?: 'snapshot' | 'stop' | null;
+  mode_chosen?: boolean;
   folders: { target: string; host: string; share: string }[];
   missing: { target: string; host: string; share: string }[];
   scheduled: boolean;

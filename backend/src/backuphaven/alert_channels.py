@@ -37,6 +37,7 @@ DEFAULT_KINDS = [
     "disk_low",
     "restore_failed",
     "unprotected",
+    "container_down",
 ]
 
 

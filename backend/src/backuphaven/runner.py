@@ -18,13 +18,13 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, Literal
 
-from backuphaven import __version__, dbdump, discovery, external, retention
+from backuphaven import __version__, app_modes, dbdump, discovery, external, retention
 from backuphaven.archive import PARTIAL_SUFFIX, ArchiveWriter, folder_key, safe_name, verify
 from backuphaven.config import Settings
 from backuphaven.db import Database, DbCheck, Run, RunApp
 from backuphaven.db.types import utcnow
 from backuphaven.diagnostics import Diagnostics
-from backuphaven.docker_proxy import DockerProxy, ProxyError
+from backuphaven.docker_proxy import Container, DockerProxy, ProxyError
 
 if TYPE_CHECKING:
     from backuphaven.alerts import AlertService
@@ -203,6 +203,7 @@ class Runner:
     ) -> None:
         self._alerts = alerts
         self._proxy = proxy
+        self._quiet_app = False
         self._db = db
         self._diagnostics = diagnostics
         self._settings = settings
@@ -539,8 +540,104 @@ class Runner:
                 writer.add_bytes(f"{base}/template.xml", Path(app.template_file).read_bytes())
             except OSError as exc:
                 result.warn(f"template couldn't be read: {exc}")
-        if plugin.backup.mode == "stop":
-            result.warn("stop mode needs the socket proxy (coming later); backed up while running")
+        with self._db.read() as session:
+            mode = app_modes.effective(app_modes.load(session), app.name, plugin.backup.mode)
+        stopped: Container | None = None
+        self._quiet_app = False  # files can't change: database server folders are safe
+        if mode == "stop":
+            stopped, self._quiet_app = self._stop_for_backup(app, result)
+        try:
+            self._backup_app_data(writer, app, plugin, base, work, result)
+        finally:
+            if stopped is not None:
+                self._start_again(stopped, result)
+            self._quiet_app = False
+        result.seconds = time.monotonic() - started
+        logger.debug(
+            "app finished",
+            extra={
+                "app": app.name,
+                "status": result.status,
+                "files": result.files,
+                "bytes": result.bytes,
+                "seconds": round(result.seconds, 2),
+            },
+        )
+        return result
+
+    def _stop_for_backup(
+        self, app: discovery.App, result: AppResult
+    ) -> tuple[Container | None, bool]:
+        """Stop the app's container for its backup (ADR-0005). Returns the container to
+        start again (None if it wasn't running or couldn't be stopped) and whether the
+        app's files are quiet (stopped)."""
+        if self._proxy is None:
+            result.warn(
+                "Stop during backup needs the socket proxy (see the guide: The socket "
+                "proxy); backed up while running"
+            )
+            return None, False
+        try:
+            container = self._proxy.find(app.name)
+            if container is None:
+                result.warn(f"no container named {app.name}; backed up as it is")
+                return None, False
+            if container.protected:
+                result.warn("BackupHaven never stops itself or the proxy; backed up while running")
+                return None, False
+            if not container.running:
+                return None, True  # already stopped: nothing to start again
+            if self.progress is not None:
+                self.progress.phase = f"stopping {app.name}"
+            self._proxy.stop(container)
+        except ProxyError as exc:
+            result.warn(f"couldn't stop {app.name} ({exc}); backed up while running")
+            return None, False
+        if self.progress is not None:
+            self.progress.phase = "backing up"
+        logger.info("container stopped for its backup", extra={"app": app.name})
+        return container, True
+
+    def _start_again(self, container: Container, result: AppResult) -> None:
+        """Start a container stopped for its backup; always tried, even after an error."""
+        if self.progress is not None:
+            self.progress.phase = f"starting {container.name}"
+        problem: str | None = None
+        try:
+            assert self._proxy is not None  # noqa: S101 - only called when it stopped one
+            self._proxy.start(container)
+            again = self._proxy.find(container.name)
+            if again is None or not again.running:
+                problem = "it isn't running"
+        except ProxyError as exc:
+            problem = str(exc)
+        key = f"container_down:{container.name}"
+        if problem:
+            result.error(
+                f"{container.name} didn't start again after its backup ({problem}): "
+                "start it in Unraid"
+            )
+            if self._alerts is not None:
+                self._alerts.raise_(
+                    "container_down",
+                    key,
+                    f"{container.name} was stopped for its backup and didn't start again "
+                    f"({problem}). Start it in Unraid.",
+                )
+        else:
+            logger.info("container started again", extra={"app": container.name})
+            if self._alerts is not None:
+                self._alerts.resolve(key, f"{container.name} is running again.")
+
+    def _backup_app_data(
+        self,
+        writer: ArchiveWriter,
+        app: discovery.App,
+        plugin: Manifest,
+        base: str,
+        work: Path,
+        result: AppResult,
+    ) -> None:
         folders = _nested_once(
             [
                 f
@@ -578,18 +675,6 @@ class Runner:
                 )
         for pattern in sorted(missing_everywhere or ()):
             result.error(f"expected file missing: {pattern}")
-        result.seconds = time.monotonic() - started
-        logger.debug(
-            "app finished",
-            extra={
-                "app": app.name,
-                "status": result.status,
-                "files": result.files,
-                "bytes": result.bytes,
-                "seconds": round(result.seconds, 2),
-            },
-        )
-        return result
 
     def _backup_folder(
         self,
@@ -632,7 +717,7 @@ class Runner:
         step = time.monotonic()
         for rel in selection.skipped_special:
             result.warn(f"skipped special file {rel}")
-        for rel, kind in selection.server_databases:
+        for rel, kind in [] if self._quiet_app else selection.server_databases:
             result.warn(
                 f"{rel} holds a {kind} database: its files are copied while the app runs and "
                 "may not restore. Keep the app's own database dumps (stop mode, coming later, "

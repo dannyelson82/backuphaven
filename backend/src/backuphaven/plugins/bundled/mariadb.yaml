@@ -1,0 +1,26 @@
+id: mariadb
+name: MariaDB / MySQL server
+version: 1.0.0
+kind: app
+plugin_api: 1
+author: BackupHaven
+description: >-
+  The whole database server: every database it holds. The container is stopped
+  during its backup (needs the socket proxy), because a database server's files
+  can't be copied safely while it runs. Apps that use it (e.g. RomM) also dump
+  their own database without stopping anything.
+recognise:
+  images: ["*/mariadb", "mariadb", "*/mysql", "mysql"]
+backup:
+  mode: stop
+  # linuxserver's image keeps everything in /config; the official ones in /var/lib/mysql.
+  folder: ["/config", "/var/lib/mysql"]
+  include: ["**"]
+  exclude:
+    - "log/**"
+    - "logs/**"
+    - "**/*.log"
+    - "*.pid"
+    - "*.sock"
+restore:
+  stop_first: true

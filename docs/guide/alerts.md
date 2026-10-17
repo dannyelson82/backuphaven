@@ -17,6 +17,7 @@ BackupHaven tells you when something needs your attention:
 | **Disk nearly full** | The backups disk has less than twice the **Minimum free space** left |
 | **Restore failed** | A restore didn't finish (your files were put back) |
 | **App not protected** | An app in the backup schedule has no plugin any more |
+| **Container didn't start** | An app stopped for its backup didn't start again. Start it in Unraid |
 
 When the problem is fixed you get a **Recovered** message. The same alert isn't
 sent again for 12 hours while it's still a problem. Open alerts also show at the

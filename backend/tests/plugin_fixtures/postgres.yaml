@@ -1,0 +1,15 @@
+plugin: postgres
+image: postgres:17
+folders:
+  - target: /var/lib/postgresql/data
+    files:
+      PG_VERSION: "17"
+      global/pg_control: "control"
+      base/16384/1259: "table data"
+      postgresql.conf: "listen_addresses = '*'"
+      postmaster.pid: "1"
+must_restore:
+  - /var/lib/postgresql/data/PG_VERSION
+  - /var/lib/postgresql/data/global/pg_control
+  - /var/lib/postgresql/data/base/16384/1259
+must_not_backup: [/var/lib/postgresql/data/postmaster.pid]

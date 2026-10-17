@@ -8,7 +8,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
-from backuphaven import audit, discovery, external, schedule
+from backuphaven import app_modes, audit, discovery, external, schedule
 from backuphaven.api.deps import DbDep, InteractiveDep, csrf_protect, require_setup_done
 from backuphaven.config import Settings
 from backuphaven.db import Run, RunApp
@@ -44,6 +44,9 @@ class AppView(BaseModel):
     # Through the socket proxy: running, stopped, or missing (no such container);
     # None without the proxy.
     container: str | None = None
+    # "snapshot" or "stop": the owner's choice, or the plugin's default.
+    mode: str | None = None
+    mode_chosen: bool = False
     folders: list[DataFolderView]
     missing: list[DataFolderView]
     # In the backup schedule (ADR-0011).
@@ -93,6 +96,8 @@ def discovered(request: Request, db: DbDep, _principal: InteractiveDep) -> Disco
     in_schedule = {n.lower() for n in scheduled}
     last = _last_backups(db)
     containers = _containers(request)
+    with db.read() as session:
+        modes = app_modes.load(session)
     pairs = []
     for found in apps:
         plugin = known.match(found.image)
@@ -121,6 +126,8 @@ def discovered(request: Request, db: DbDep, _principal: InteractiveDep) -> Disco
                 container=None
                 if containers is None
                 else containers.get(app.name.lower(), "missing"),
+                mode=app_modes.effective(modes, app.name, plugin.backup.mode) if plugin else None,
+                mode_chosen=app.name.lower() in modes,
                 last_backup=last.get(app.name.lower()),
             )
             for app, plugin in pairs
@@ -393,3 +400,23 @@ def docker_status(request: Request, _principal: InteractiveDep) -> DockerStatusV
     return DockerStatusView(
         configured=True, address=settings.docker_proxy, ok=True, error=None, containers=count
     )
+
+
+class ModeInput(BaseModel):
+    # None: back to the plugin's default.
+    mode: app_modes.Mode | None
+
+
+@router.put("/apps/{name}/mode")
+def set_mode(
+    name: str, body: ModeInput, request: Request, db: DbDep, principal: InteractiveDep
+) -> dict[str, str | None]:
+    """Stop during backup, or back up while running (ADR-0005)."""
+    app, plugin = _app_and_plugin(request, name)
+    if plugin is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "no plugin yet")
+    with db.write() as session:
+        app_modes.save(session, app.name, body.mode)
+        audit.record(session, principal.actor, "app.mode", app.name, {"mode": body.mode})
+        mode = app_modes.effective(app_modes.load(session), app.name, plugin.backup.mode)
+    return {"mode": mode}

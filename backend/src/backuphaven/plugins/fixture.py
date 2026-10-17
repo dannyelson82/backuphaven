@@ -37,6 +37,8 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from backuphaven.dbdump import DumpError, Target, execute
+from backuphaven.docker_proxy import DockerProxy
+from backuphaven.plugins.fake_docker import fake_docker
 from backuphaven.plugins.manifest import Manifest
 
 if TYPE_CHECKING:
@@ -204,9 +206,27 @@ def round_trip(manifest: Manifest, fixture: Fixture) -> list[str]:
         with db.write() as session:
             retention.save_settings(session, retention.KeepingSettings(min_free_gb=0))
         registry = Registry({app: manifest})
-        runner = Runner(db, settings, registry)
+        stop_mode = manifest.backup.mode == "stop"
+        proxy = None
+        if stop_mode:  # a pretend Docker with the app's container, running
+            docker_ctx = fake_docker()
+            docker, address = docker_ctx.__enter__()
+            docker.add(app, fixture.image)
+            proxy = DockerProxy(address)
+        runner = Runner(db, settings, registry, proxy=proxy)
         seeded = _seed_databases(db, app, manifest, servers)
-        run_id = runner.run_now(only=[app], scheduled=True)
+        try:
+            run_id = runner.run_now(only=[app], scheduled=True)
+        finally:
+            if stop_mode:
+                calls = list(docker.calls)
+                running = docker.state(app) == "running"
+                docker_ctx.__exit__(None, None, None)
+        if stop_mode:
+            if not any("/stop" in c for c in calls):
+                problems.append("the container wasn't stopped for its backup")
+            if not running:
+                problems.append("the container wasn't started again after its backup")
         with db.read() as session:
             result = session.query(RunApp).filter_by(run_id=run_id).one_or_none()
         if result is None or result.status != "ok":

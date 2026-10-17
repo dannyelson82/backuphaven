@@ -122,7 +122,8 @@ def test_image_name(image: str, name: str) -> None:
         ("plexinc/pms-docker:latest", "plex"),
         ("ghcr.io/dannyelson82/backuphaven:edge", "backuphaven"),
         ("lscr.io/linuxserver/sonarr-extended", None),  # not Sonarr itself
-        ("mariadb", None),
+        ("mariadb", "mariadb"),
+        ("someone/unknown-app", None),
         ("", None),
     ],
 )

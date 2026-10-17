@@ -42,6 +42,7 @@ export function RestorePage() {
 
   const created = contents.data?.created;
   const stopped = check.data?.stopped === true;
+  const auto = check.data?.auto_stop === true;
   const finished = restore.data && restore.data.status !== 'running' ? restore.data : null;
   const step = finished ? 2 : restoreId !== null || stopped ? 1 : 0;
 
@@ -69,7 +70,7 @@ export function RestorePage() {
               <Text size="sm">
                 In Unraid, go to <b>Docker</b>, click <b>{app}</b> and choose <b>Stop</b>. Then
                 press <b>Check it&apos;s stopped</b>: BackupHaven watches its files for a few
-                seconds.
+                seconds. (With the socket proxy set up, BackupHaven stops and starts {app} itself.)
               </Text>
               <Group>
                 <Button
@@ -103,6 +104,12 @@ export function RestorePage() {
             <Stack gap="xs">
               {check.data?.stopped && (
                 <>
+                  {auto && (
+                    <Alert color="blue">
+                      BackupHaven stops {app}, restores it and starts it again: no need to stop it
+                      in Unraid.
+                    </Alert>
+                  )}
                   <Text size="sm">These folders will be replaced:</Text>
                   <List size="sm">
                     {check.data.folders
@@ -114,7 +121,11 @@ export function RestorePage() {
                       ))}
                   </List>
                   <Checkbox
-                    label={`${app} is stopped, and I want to replace its files with the backup`}
+                    label={
+                      auto
+                        ? `I want to replace ${app}'s files with the backup`
+                        : `${app} is stopped, and I want to replace its files with the backup`
+                    }
                     checked={confirmed}
                     onChange={(event) => setConfirmed(event.currentTarget.checked)}
                     disabled={restoreId !== null}
@@ -149,12 +160,20 @@ export function RestorePage() {
                 {finished.status === 'done' && (
                   <>
                     <Alert color="green" title={`${app} is restored`}>
-                      In Unraid, go to <b>Docker</b>, click <b>{app}</b> and choose <b>Start</b>.
+                      {auto ? (
+                        <>{app} has been started again.</>
+                      ) : (
+                        <>
+                          In Unraid, go to <b>Docker</b>, click <b>{app}</b> and choose <b>Start</b>
+                          .
+                        </>
+                      )}
                       {finished.detail?.folders?.some((f) => f.moved_back.length > 0) &&
                         ' Files the backup leaves out on purpose (such as caches and posters) were kept.'}
                     </Alert>
                     <Text size="sm">
-                      If it&apos;s worse than before, stop {app} again and press <b>Undo</b>
+                      If it&apos;s worse than before, {auto ? '' : `stop ${app} again and `}press{' '}
+                      <b>Undo</b>
                       {finished.undo_until &&
                         ` (possible until ${formatDate(finished.undo_until)})`}
                       .

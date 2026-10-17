@@ -86,3 +86,33 @@ it('walks through stopping the container, restoring and undoing', async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Undo' }));
   expect(await screen.findByText('Undone')).toBeInTheDocument();
 });
+
+it('restores in one click when BackupHaven can stop the container itself', async () => {
+  mockApi({
+    'GET auth/state': LOGGED_IN,
+    'GET status': { body: EMPTY_STATUS },
+    'GET backups/4/contents': {
+      body: { run_id: 4, archive: 'b.tar.zst', created: null, only: null, apps: [] },
+    },
+    'POST restores/check': {
+      body: {
+        app: 'romm',
+        auto_stop: true,
+        stopped: true,
+        changing: [],
+        folders: [
+          { target: '/romm/config', host: '/mnt/user/appdata/romm', exists: true, in_backup: true },
+        ],
+      },
+    },
+  });
+  window.location.hash = '#/restore/4/romm';
+  render(<App />);
+  await userEvent.click(await screen.findByRole('button', { name: "Check it's stopped" }));
+  expect(
+    await screen.findByText(/BackupHaven stops romm, restores it and starts it again/),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole('checkbox', { name: "I want to replace romm's files with the backup" }),
+  ).toBeInTheDocument();
+});

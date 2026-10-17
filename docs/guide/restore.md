@@ -28,6 +28,11 @@ Then follow the three steps on the page:
    shows what it's doing.
 3. **Start it again.** In Unraid, start the container.
 
+With the [socket proxy](stop-mode.md) set up, steps 1 and 3 go away:
+BackupHaven stops the app itself, restores it and starts it again (only if it was
+running), and **Undo** does the same. If the app doesn't start again afterwards,
+the restore says so and you get a **Container didn't start** alert.
+
 BackupHaven won't restore while a backup is running, and backups wait for a
 restore to finish.
 

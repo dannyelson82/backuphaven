@@ -127,6 +127,7 @@ def create_app(
         app.state.runner.lock,
         settings.restore_quiet_s,
         alerts=app.state.alerts,
+        proxy=app.state.proxy,
     )
     health = HealthCheck(db, settings, app.state.alerts)
 

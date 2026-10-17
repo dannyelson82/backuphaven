@@ -39,6 +39,7 @@ from backuphaven.config import Settings
 from backuphaven.db import Database, Restore, Run
 from backuphaven.db.types import utcnow
 from backuphaven.dbdump import Target
+from backuphaven.docker_proxy import Container, DockerProxy, ProxyError
 from backuphaven.plugins.manifest import ExternalDatabase, Manifest
 from backuphaven.plugins.registry import PluginSource
 from backuphaven.retention import is_ours
@@ -333,8 +334,10 @@ class Restorer:
         quiet_seconds: float = QUIET_SECONDS,
         sleep: Callable[[float], None] = time.sleep,
         alerts: "AlertService | None" = None,
+        proxy: DockerProxy | None = None,
     ) -> None:
         self._alerts = alerts
+        self._proxy = proxy
         self._sleep = sleep
         self._db = db
         self._settings = settings
@@ -345,11 +348,27 @@ class Restorer:
 
     # -- checks before starting --
 
+    def container(self, app: str) -> Container | None:
+        """The app's container through the socket proxy, if BackupHaven may stop it
+        (one-click restore); None without a proxy or such a container."""
+        if self._proxy is None:
+            return None
+        try:
+            found = self._proxy.find(app)
+        except ProxyError:
+            return None
+        return found if found is not None and not found.protected else None
+
     def check(self, run_id: int, app: str) -> dict[str, Any]:
-        """What a restore would do, and whether the app looks stopped."""
+        """What a restore would do, and whether the app looks stopped (or, with the
+        socket proxy, that BackupHaven will stop and start it itself)."""
         p = plan(self._db, self._settings, self._registry, run_id, app)
-        changed = changing_files([f.path for f in p.folders], self._quiet, self._sleep)
+        auto = self.container(p.app) is not None
+        changed = (
+            [] if auto else changing_files([f.path for f in p.folders], self._quiet, self._sleep)
+        )
         return {
+            "auto_stop": auto,
             "app": p.app,
             "folders": [
                 {
@@ -394,14 +413,57 @@ class Restorer:
                 session.flush()
                 restore_id = row.id
             self.progress = Progress(restore_id=restore_id, app=p.app)
-            self._restore(restore_id, p)
+            self._with_container_stopped(restore_id, p.app, lambda: self._restore(restore_id, p))
         return restore_id
 
     def _run_and_release(self, restore_id: int, p: Plan) -> None:
         try:
-            self._restore(restore_id, p)
+            self._with_container_stopped(restore_id, p.app, lambda: self._restore(restore_id, p))
         finally:
             self._lock.release()
+
+    def _with_container_stopped(
+        self, restore_id: int | None, app: str, work: Callable[[], None]
+    ) -> None:
+        """One-click restore: with the socket proxy, stop the app's container first and
+        start it again afterwards (only if it was running), whatever happens."""
+        container = self.container(app)
+        if container is None or not container.running:
+            work()
+            return
+        assert self._proxy is not None  # noqa: S101 - container() found one through it
+        self._phase(f"stopping {app}")
+        try:
+            self._proxy.stop(container)
+        except ProxyError as exc:
+            raise RestoreError(f"couldn't stop {app}: {exc}") from None
+        problem: str | None = None
+        try:
+            work()
+        finally:
+            self._phase(f"starting {app}")
+            try:
+                self._proxy.start(container)
+                again = self._proxy.find(container.name)
+                if again is None or not again.running:
+                    problem = "it isn't running"
+            except ProxyError as exc:
+                problem = str(exc)
+            if problem:
+                message = (
+                    f"{app} didn't start again after the restore ({problem}): start it in Unraid"
+                )
+                logger.error(
+                    "container didn't start after restore", extra={"app": app, "problem": problem}
+                )
+                if restore_id is not None:
+                    with self._db.write() as session:
+                        row = session.get(Restore, restore_id)
+                        if row is not None:
+                            row.error = f"{row.error}; {message}" if row.error else message
+                if self._alerts is not None:
+                    self._alerts.raise_("container_down", f"container_down:{app}", message)
+            self.progress = None
 
     def _phase(self, phase: str) -> None:
         if self.progress is not None:
@@ -607,23 +669,33 @@ class Restorer:
         if not self._lock.acquire(blocking=False):
             raise RestoreError("a backup or another restore is running")
         try:
-            changed = changing_files(paths, self._quiet, self._sleep)
-            if changed:
-                raise RestoreError(
-                    f"files are still changing ({changed[0]}): stop the container first"
-                )
-            if detail.get("external"):
-                p = plan(self._db, self._settings, self._registry, row_run_id, row_app)
-                for item in reversed(detail["external"]):
-                    self._load_previous(p, item)
-            for record in reversed(folders):
-                self._put_back(record)
+            self._with_container_stopped(
+                None, row_app, lambda: self._undo(detail, folders, paths, row_run_id, row_app)
+            )
             with self._db.write() as session:
                 row = session.get(Restore, restore_id)
                 if row is not None:
                     row.status, row.undo_until = "undone", None
         finally:
             self._lock.release()
+
+    def _undo(
+        self,
+        detail: dict[str, Any],
+        folders: list[dict[str, Any]],
+        paths: list[Path],
+        row_run_id: int,
+        row_app: str,
+    ) -> None:
+        changed = changing_files(paths, self._quiet, self._sleep)
+        if changed:
+            raise RestoreError(f"files are still changing ({changed[0]}): stop the container first")
+        if detail.get("external"):
+            p = plan(self._db, self._settings, self._registry, row_run_id, row_app)
+            for item in reversed(detail["external"]):
+                self._load_previous(p, item)
+        for record in reversed(folders):
+            self._put_back(record)
 
     def expire(self, now: datetime | None = None) -> list[int]:
         """Delete set-aside folders whose undo time has run out."""

@@ -38,6 +38,8 @@ proxy is stop or start a container. It never stops itself or the proxy.
 With the proxy, BackupHaven:
 
 - can stop apps during their backup (above);
+- restores apps in one click: it stops the app, restores it and starts it again
+  (see [Restoring an app](restore.md));
 - shows on the **Apps** page whether each container is **Running** or
   **Stopped**;
 - knows exactly which apps are **Not installed** (there's no container with

@@ -151,3 +151,45 @@ it('shows apps without a plugin and stops them being added', async () => {
   );
   expect(screen.getByRole('link', { name: 'Plugin file' })).toBeInTheDocument();
 });
+
+it('shows and changes where the database of an app is reached', async () => {
+  let view = {
+    id: 'main',
+    engine: 'mariadb',
+    host: 'mariadb',
+    port: 3306,
+    database: 'romm',
+    user: 'romm-user',
+    from_template: true,
+    problem: null,
+  };
+  const calls = mockApi({
+    'GET auth/state': LOGGED_IN,
+    'GET status': { body: EMPTY_STATUS },
+    'GET apps/discovered': {
+      body: {
+        data_shares: ['appdata'],
+        templates_found: true,
+        scheduled: [],
+        apps: [app('romm', { external_databases: ['main'] })],
+      },
+    },
+    'GET apps/romm/databases': () => ({ body: [view] }),
+    'PUT apps/romm/databases/main': (init) => {
+      view = { ...view, ...JSON.parse(String(init?.body)), from_template: false };
+      return { body: [view] };
+    },
+  });
+  window.location.hash = '#/apps';
+  render(<App />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Database…' }));
+  const dialog = await screen.findByRole('dialog');
+  expect(within(dialog).getByText(/Address from the app's Unraid template/)).toBeInTheDocument();
+  const address = within(dialog).getByRole('textbox', { name: /^Address/ });
+  await userEvent.clear(address);
+  await userEvent.type(address, '192.168.1.20');
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+  expect(await within(dialog).findByText(/Address set here/)).toBeInTheDocument();
+  const put = calls.find((c) => c.key === 'PUT apps/romm/databases/main');
+  expect(JSON.parse(String(put?.init?.body))).toEqual({ host: '192.168.1.20', port: 3306 });
+});

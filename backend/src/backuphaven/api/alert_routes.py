@@ -1,6 +1,7 @@
 """Settings → Alerts: channels, which alerts they send, the morning summary; and
 the alert history (docs/plans/phase-0.4.md)."""
 
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -16,6 +17,7 @@ from backuphaven.db import Alert
 from backuphaven.secretbox import SecretBox
 
 router = APIRouter(dependencies=[Depends(require_setup_done), Depends(csrf_protect)])
+logger = logging.getLogger(__name__)
 
 
 class ChannelView(BaseModel):
@@ -181,7 +183,12 @@ def test_channel(
             "Test from BackupHaven", "If you can read this, alerts reach you here.", "info"
         )
     except Exception as exc:  # any failure of an outside service, shown to the owner
+        logger.warning(
+            "channel test failed",
+            extra={"channel": config.name, "type": config.type, "reason": str(exc)[:300]},
+        )
         return {"ok": False, "error": str(exc)[:300]}
+    logger.info("channel test sent", extra={"channel": config.name, "type": config.type})
     return {"ok": True, "error": None}
 
 

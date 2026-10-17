@@ -34,11 +34,12 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
-from backuphaven import unpack
+from backuphaven import dbdump, discovery, external, unpack
 from backuphaven.config import Settings
 from backuphaven.db import Database, Restore, Run
 from backuphaven.db.types import utcnow
-from backuphaven.plugins.manifest import Manifest
+from backuphaven.dbdump import Target
+from backuphaven.plugins.manifest import ExternalDatabase, Manifest
 from backuphaven.plugins.registry import PluginSource
 from backuphaven.retention import is_ours
 from backuphaven.selection import (
@@ -58,6 +59,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 ASIDE_DIR = ".backuphaven-restore"
+# Databases as they were just before a restore, for Undo (in the backups folder).
+RESTORE_DUMPS = ".restore-dumps"
 UNDO_DAYS = 7
 QUIET_SECONDS = 5.0
 
@@ -88,6 +91,9 @@ class Plan:
     app_key: str
     plugin: Manifest
     folders: list[FolderPlan]
+    # External databases (ADR-0014): (the plugin's spec, file in the backup).
+    external: list[tuple["ExternalDatabase", str]] = field(default_factory=list)
+    app_info: discovery.App | None = None  # the app's current template (variables)
 
 
 @dataclass
@@ -163,6 +169,22 @@ def plan(db: Database, settings: Settings, registry: PluginSource, run_id: int, 
                 whole_share=whole_share,
             )
         )
+    externals: list[tuple[ExternalDatabase, str]] = []
+    app_info = None
+    if record.get("external"):
+        found = {
+            a.name.lower(): a
+            for a in discovery.discover(settings.templates_dir, settings.data_root)
+        }
+        app_info = found.get(str(record["name"]).lower())
+        if app_info is None:
+            raise RestoreError(f"{app}'s Unraid template is gone, so its database can't be reached")
+        specs = {s.id: s for s in plugin.backup.external_databases}
+        for item in record["external"]:
+            spec = specs.get(str(item["id"]))
+            if spec is None:
+                raise RestoreError(f"the {plugin.name} plugin no longer has database {item['id']}")
+            externals.append((spec, f"apps/{key}/{item['file']}"))
     return Plan(
         run_id=run_id,
         archive=archive,
@@ -171,6 +193,8 @@ def plan(db: Database, settings: Settings, registry: PluginSource, run_id: int, 
         app_key=key,
         plugin=plugin,
         folders=plans,
+        external=externals,
+        app_info=app_info,
     )
 
 
@@ -194,6 +218,25 @@ def _fingerprint(root: Path, limit: int = 200_000) -> dict[str, tuple[int, int]]
             if len(seen) >= limit:
                 return seen
     return seen
+
+
+def _extract_one(archive: Path, name: str, record: dict[str, Any] | None, dest: Path) -> None:
+    """Write one file from the backup to ``dest``, checking it against the contents list."""
+    if record is None or record.get("kind") != "file":
+        raise RestoreError(f"{name} isn't in the backup's contents list")
+    import hashlib
+
+    digest = hashlib.sha256()
+    for info, data in unpack.members(archive):
+        if info.name == name and data is not None:
+            with dest.open("wb") as out:
+                while chunk := data.read(1024 * 1024):
+                    digest.update(chunk)
+                    out.write(chunk)
+            if digest.hexdigest() != record["sha256"]:
+                raise RestoreError(f"{name} is damaged in the backup (checksum differs)")
+            return
+    raise RestoreError(f"{name} is missing from the backup file")
 
 
 def changing_files(
@@ -368,6 +411,7 @@ class Restorer:
         now = datetime.now(UTC)
         rules = effective_rules(p.plugin)
         done: list[dict[str, Any]] = []
+        loaded: list[dict[str, Any]] = []
         error: str | None = None
         try:
             self._phase("checking")
@@ -430,10 +474,20 @@ class Restorer:
                         record["moved_back"].append(rel)
                 if old_info is not None:
                     os.utime(folder.path, ns=(old_info.st_atime_ns, old_info.st_mtime_ns))
+            self._restore_databases(restore_id, p, loaded)
         except Exception as exc:
             error = str(exc) or type(exc).__name__
             logger.warning("restore failed; putting the app's files back", exc_info=True)
             self._phase("putting the app's files back")
+            for item in reversed(loaded):
+                try:
+                    self._load_previous(p, item)
+                except Exception:
+                    logger.exception("couldn't put the database back", extra={"db": item["id"]})
+                    error += (
+                        f"; couldn't put database {item['id']} back: "
+                        f"its copy is {item['pre_restore']}"
+                    )
             for record in reversed(done):
                 try:
                     self._put_back(record)
@@ -450,7 +504,7 @@ class Restorer:
                     row.error = error
                     row.finished_at = utcnow()
                     row.undo_until = None if error else utcnow() + timedelta(days=UNDO_DAYS)
-                    row.detail = {"folders": done, "archive": p.archive.name}
+                    row.detail = {"folders": done, "external": loaded, "archive": p.archive.name}
             if self._alerts is not None:
                 key = f"restore_failed:{p.app}"
                 if error:
@@ -467,6 +521,43 @@ class Restorer:
                 extra={"restore_id": restore_id, "app": p.app, "error": error},
             )
             self.progress = None
+
+    # -- databases in other containers (ADR-0014) --
+
+    def _target(self, p: Plan, spec: "ExternalDatabase") -> Target:
+        assert p.app_info is not None  # noqa: S101 - set by plan() when there are any
+        with self._db.read() as session:
+            overrides = external.load_overrides(session)
+        return external.resolve(p.app_info, spec, overrides).target
+
+    def _restore_databases(self, restore_id: int, p: Plan, loaded: list[dict[str, Any]]) -> None:
+        """Dump each current database (for Undo), then load the backup's copy."""
+        if not p.external:
+            return
+        keep = self._settings.backups_dir / RESTORE_DUMPS / str(restore_id)
+        keep.mkdir(parents=True, exist_ok=True)
+        work = self._settings.backups_dir / RESTORE_DUMPS / f"{restore_id}-work"
+        work.mkdir(parents=True, exist_ok=True)
+        try:
+            records = {e["path"]: e for e in p.manifest.get("entries", [])}
+            for spec, name in p.external:
+                target = self._target(p, spec)
+                suffix = external.SUFFIX[spec.engine]
+                self._phase(f"saving the current {spec.id} database")
+                pre = keep / f"{spec.id}.{suffix}"
+                dbdump.dump(target, pre)
+                item = {"id": spec.id, "engine": spec.engine, "pre_restore": str(pre)}
+                source = work / f"{spec.id}.{suffix}"
+                _extract_one(p.archive, name, records.get(name), source)
+                self._phase(f"loading the {spec.id} database")
+                loaded.append(item)  # from here on, undo means loading pre_restore
+                dbdump.load(target, source)
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+
+    def _load_previous(self, p: Plan, item: dict[str, Any]) -> None:
+        spec = next(s for s, _ in p.external if s.id == item["id"])
+        dbdump.load(self._target(p, spec), Path(item["pre_restore"]))
 
     def _put_back(self, record: dict[str, Any]) -> None:
         """Remove the restored folder and rename the set-aside one back."""
@@ -507,6 +598,8 @@ class Restorer:
             detail = dict(row.detail or {}) if row is not None else {}
             status_ = row.status if row is not None else None
             until = row.undo_until if row is not None else None
+            row_run_id = row.run_id if row is not None else 0
+            row_app = row.app if row is not None else ""
         if status_ != "done" or until is None or until < datetime.now(UTC):
             raise RestoreError("this restore can't be undone any more")
         folders = detail.get("folders", [])
@@ -519,6 +612,10 @@ class Restorer:
                 raise RestoreError(
                     f"files are still changing ({changed[0]}): stop the container first"
                 )
+            if detail.get("external"):
+                p = plan(self._db, self._settings, self._registry, row_run_id, row_app)
+                for item in reversed(detail["external"]):
+                    self._load_previous(p, item)
             for record in reversed(folders):
                 self._put_back(record)
             with self._db.write() as session:
@@ -545,6 +642,9 @@ class Restorer:
                         shutil.rmtree(aside, ignore_errors=True)
                         with suppress(OSError):
                             Path(aside).parent.rmdir()
+                shutil.rmtree(
+                    self._settings.backups_dir / RESTORE_DUMPS / str(row.id), ignore_errors=True
+                )
                 row.status, row.undo_until = "expired", None
                 expired.append(row.id)
         return expired

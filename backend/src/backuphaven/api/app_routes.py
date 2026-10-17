@@ -1,13 +1,14 @@
 """Apps found from the Unraid templates (ARCHITECTURE.md §6.1)."""
 
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
-from backuphaven import audit, discovery, schedule
+from backuphaven import audit, discovery, external, schedule
 from backuphaven.api.deps import DbDep, InteractiveDep, csrf_protect, require_setup_done
 from backuphaven.config import Settings
 from backuphaven.db import Run, RunApp
@@ -37,6 +38,8 @@ class AppView(BaseModel):
     plugin: str | None
     plugin_name: str | None = None
     plugin_local: bool = False
+    # The plugin's databases in other containers (ids), if any (ADR-0014).
+    external_databases: list[str] = []
     folders: list[DataFolderView]
     missing: list[DataFolderView]
     # In the backup schedule (ADR-0011).
@@ -101,6 +104,9 @@ def discovered(request: Request, db: DbDep, _principal: InteractiveDep) -> Disco
                 plugin=plugin.id if plugin else None,
                 plugin_name=plugin.name if plugin else None,
                 plugin_local=plugin is not None and plugin.id in known.local,
+                external_databases=[d.id for d in plugin.backup.external_databases]
+                if plugin
+                else [],
                 folders=[DataFolderView(**vars(f)) for f in app.folders],
                 missing=[DataFolderView(**vars(m)) for m in app.missing],
                 scheduled=app.name.lower() in in_schedule,
@@ -230,3 +236,113 @@ def plugin_brief(name: str, request: Request, db: DbDep, principal: InteractiveD
         media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="backuphaven-plugin-{safe}.md"'},
     )
+
+
+# --- an app's databases in other containers (ADR-0014) -----------------------------------
+
+
+class ExternalDatabaseView(BaseModel):
+    id: str
+    engine: str
+    host: str | None
+    port: int | None
+    database: str | None
+    user: str | None
+    from_template: bool  # False: the owner set the address here
+    problem: str | None  # e.g. a template variable that isn't set
+
+
+class AddressInput(BaseModel):
+    host: str
+    port: int
+
+
+def _app_and_plugin(request: Request, name: str) -> tuple[discovery.App, Any]:
+    settings: Settings = request.app.state.settings
+    known: registry.PluginSource = request.app.state.plugins
+    found = {
+        a.name.lower(): a for a in discovery.discover(settings.templates_dir, settings.data_root)
+    }
+    app = found.get(name.lower())
+    if app is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "app_not_found")
+    return app, known.match(app.image)
+
+
+@router.get("/apps/{name}/databases")
+def app_databases(
+    name: str, request: Request, db: DbDep, _principal: InteractiveDep
+) -> list[ExternalDatabaseView]:
+    """Where BackupHaven reaches the app's databases (never the password)."""
+    app, plugin = _app_and_plugin(request, name)
+    if plugin is None:
+        return []
+    with db.read() as session:
+        overrides = external.load_overrides(session)
+    views = []
+    for spec in plugin.backup.external_databases:
+        try:
+            resolved = external.resolve(app, spec, overrides)
+        except ValueError as exc:
+            views.append(
+                ExternalDatabaseView(
+                    id=spec.id,
+                    engine=spec.engine,
+                    host=None,
+                    port=None,
+                    database=None,
+                    user=None,
+                    from_template=True,
+                    problem=str(exc),
+                )
+            )
+            continue
+        t = resolved.target
+        views.append(
+            ExternalDatabaseView(
+                id=spec.id,
+                engine=spec.engine,
+                host=t.host,
+                port=t.port,
+                database=t.database,
+                user=t.user,
+                from_template=resolved.from_template,
+                problem=None,
+            )
+        )
+    return views
+
+
+@router.put("/apps/{name}/databases/{db_id}")
+def set_database_address(
+    name: str,
+    db_id: str,
+    body: AddressInput,
+    request: Request,
+    db: DbDep,
+    principal: InteractiveDep,
+) -> list[ExternalDatabaseView]:
+    app, plugin = _app_and_plugin(request, name)
+    if plugin is None or db_id not in {s.id for s in plugin.backup.external_databases}:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "database_not_found")
+    try:
+        address = external.Address(host=body.host, port=body.port)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from None
+    with db.write() as session:
+        external.save_override(session, app.name, db_id, address)
+        audit.record(
+            session, principal.actor, "app.database_address", app.name, address.model_dump()
+        )
+    return app_databases(name, request, db, principal)
+
+
+@router.delete("/apps/{name}/databases/{db_id}")
+def clear_database_address(
+    name: str, db_id: str, request: Request, db: DbDep, principal: InteractiveDep
+) -> list[ExternalDatabaseView]:
+    app, _plugin = _app_and_plugin(request, name)
+    with db.write() as session:
+        external.save_override(session, app.name, db_id, None)
+        audit.record(session, principal.actor, "app.database_address", app.name, {"cleared": db_id})
+    return app_databases(name, request, db, principal)

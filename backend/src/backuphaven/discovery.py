@@ -6,7 +6,7 @@ pure; ``discover`` reads the template folder.
 """
 
 import logging
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 
 import defusedxml.ElementTree as SafeET
@@ -34,6 +34,9 @@ class Template:
     name: str
     image: str
     mappings: tuple[Mapping, ...]
+    # Environment variables (Type="Variable"): name -> value. May hold passwords:
+    # used only to reach an app's database (ADR-0014), never shown or stored.
+    variables: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -74,6 +77,8 @@ class App:
     missing: tuple[MissingShare, ...] = ()
     template_file: str | None = None  # where the template was read from
     whole_shares: tuple[WholeShare, ...] = ()
+    # The template's variables (see Template.variables): never shown or stored.
+    variables: dict[str, str] = field(default_factory=dict, repr=False, compare=False)
 
 
 class TemplateError(ValueError):
@@ -95,8 +100,17 @@ def parse_template(text: str) -> Template:
     if not name:
         raise TemplateError("template has no name")
     mappings: list[Mapping] = []
+    variables: dict[str, str] = {}
     for config in root.iter("Config"):
-        if (config.get("Type") or "").strip() != "Path":
+        kind = (config.get("Type") or "").strip()
+        if kind == "Variable":
+            var = (config.get("Target") or "").strip()
+            if var:
+                variables[var] = (config.text or "").strip() or (
+                    config.get("Default") or ""
+                ).strip()
+            continue
+        if kind != "Path":
             continue
         target = (config.get("Target") or "").strip()
         host = (config.text or "").strip() or (config.get("Default") or "").strip()
@@ -104,7 +118,7 @@ def parse_template(text: str) -> Template:
             continue
         mode = (config.get("Mode") or "rw").strip().lower()
         mappings.append(Mapping(target=target, host=host, read_only=mode.startswith("ro")))
-    return Template(name=name, image=image, mappings=tuple(mappings))
+    return Template(name=name, image=image, mappings=tuple(mappings), variables=variables)
 
 
 def normalise_host_path(host: str) -> PurePosixPath | None:
@@ -162,6 +176,7 @@ def discover_app(template: Template, data_shares: frozenset[str]) -> App:
         folders=tuple(folders),
         missing=tuple(missing),
         whole_shares=tuple(whole),
+        variables=dict(template.variables),
     )
 
 

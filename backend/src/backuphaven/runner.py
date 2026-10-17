@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, Literal
 
-from backuphaven import __version__, discovery, retention
+from backuphaven import __version__, dbdump, discovery, external, retention
 from backuphaven.archive import PARTIAL_SUFFIX, ArchiveWriter, folder_key, safe_name, verify
 from backuphaven.config import Settings
 from backuphaven.db import Database, DbCheck, Run, RunApp
@@ -27,7 +27,7 @@ from backuphaven.diagnostics import Diagnostics
 
 if TYPE_CHECKING:
     from backuphaven.alerts import AlertService
-from backuphaven.plugins.manifest import Manifest
+from backuphaven.plugins.manifest import ExternalDatabase, Manifest
 from backuphaven.plugins.registry import PluginSource
 from backuphaven.selection import OutsideShareError, effective_rules, resolve_app_folder, select
 from backuphaven.sqlite_tools import SnapshotError, check, snapshot
@@ -91,6 +91,8 @@ class AppResult:
     key: str = ""  # its folder inside the backup: apps/<key>/
     # Each data folder: {"key": folder key in the backup, "target", "host"}.
     folders: list[dict[str, str]] = field(default_factory=list)
+    # External databases stored (ADR-0014): {"id", "engine", "database", "file"}.
+    external: list[dict[str, str]] = field(default_factory=list)
     status: Status = "ok"
     files: int = 0
     bytes: int = 0
@@ -465,6 +467,7 @@ class Runner:
                     "name": r.name,
                     "key": r.key,
                     "folders": r.folders,
+                    "external": r.external,
                     "plugin": r.plugin,
                     "status": r.status,
                     "files": r.files,
@@ -531,6 +534,9 @@ class Runner:
                 result.error(f"no data folder mapped to {plugin.backup.folder}")
             else:
                 result.warn("no data folders on the data shares")
+        for spec in plugin.backup.external_databases:
+            self._check_cancel()
+            self._backup_external(writer, app, spec, base, work, result)
         # Completeness (ADR-0013): every data folder of the app is the plugin's job.
         chosen_hosts = [PurePosixPath(f.host) for f in folders]
         for f in app.folders:
@@ -651,6 +657,61 @@ class Runner:
                 writer, root, entry.rel, f"{base}/databases/{fkey}", work, index, result
             )
         return selection.missing_expected
+
+    def _backup_external(
+        self,
+        writer: ArchiveWriter,
+        app: discovery.App,
+        spec: ExternalDatabase,
+        base: str,
+        work: Path,
+        result: AppResult,
+    ) -> None:
+        """Dump one of the app's databases in another container (ADR-0014)."""
+        name = f"external/{spec.id}"
+        record: dict[str, Any] = {"path": name, "kind": "external", "engine": spec.engine}
+        try:
+            with self._db.read() as session:
+                overrides = external.load_overrides(session)
+            target = external.resolve(app, spec, overrides).target
+            record["database"] = target.database
+            if not dbdump.tools_available(spec.engine):
+                raise dbdump.DumpError(f"the {spec.engine} tools aren't in this image")
+            suffix = external.SUFFIX[spec.engine]
+            dest = work / f"{safe_name(result.name)}-{spec.id}.{suffix}"
+            logger.debug(
+                "external database dump starting",
+                extra={
+                    "app": result.name,
+                    "db": spec.id,
+                    "engine": spec.engine,
+                    "host": target.host,
+                },
+            )
+            dumped = dbdump.dump(target, dest)
+            try:
+                stored = writer.add_file(f"{base}/{name}.{suffix}", dest)
+            finally:
+                dest.unlink(missing_ok=True)
+            record.update(status="ok", size=dumped.size, seconds=round(dumped.seconds, 2))
+            result.external.append(
+                {
+                    "id": spec.id,
+                    "engine": spec.engine,
+                    "database": target.database,
+                    "file": f"{name}.{suffix}",
+                }
+            )
+            result.files += 1
+            result.bytes += stored.size
+            self._count(stored.size)
+        except (ValueError, dbdump.DumpError) as exc:
+            record.update(status="failed", messages=[str(exc)])
+            result.error(
+                f"database {spec.id} ({spec.engine}) couldn't be dumped: {exc}. If the address "
+                "is wrong, set it on the Apps page"
+            )
+        result.databases.append(record)
 
     def _backup_database(
         self,

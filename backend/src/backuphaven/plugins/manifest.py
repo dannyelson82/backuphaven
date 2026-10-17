@@ -76,6 +76,24 @@ class Recognise(Strict):
     )
 
 
+_EXPRESSION = r"^[^\x00\n\r]{0,200}$"
+Expression = Annotated[str, StringConstraints(pattern=_EXPRESSION)]
+
+
+class ExternalDatabase(Strict):
+    """A database the app keeps in a database server in another container
+    (ADR-0014). Values may use the app's template variables: ``${DB_HOST}``, or
+    ``${DB_PORT:-3306}`` with a default."""
+
+    id: Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9_-]{0,31}$")]
+    engine: Literal["mariadb", "postgres"]
+    host: Expression
+    port: Expression = ""  # empty: the engine's usual port
+    database: Expression
+    user: Expression
+    password: Expression = ""
+
+
 class Backup(FileRules):
     mode: Literal["snapshot", "stop"] = "snapshot"
     # The app's data folder, as the app's container sees it. "*" = every data folder
@@ -88,6 +106,8 @@ class Backup(FileRules):
     databases: list[Pattern] | Literal["auto"] = Field(default_factory=list)
     # Files that must exist, or the app's backup fails.
     expect: list[Pattern] = Field(default_factory=list, max_length=MAX_PATTERNS)
+    # Databases in database servers in other containers, dumped over the network.
+    external_databases: list[ExternalDatabase] = Field(default_factory=list, max_length=5)
 
 
 class Setting(Strict):

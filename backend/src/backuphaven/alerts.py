@@ -126,6 +126,10 @@ class AlertService:
                     continue
                 results[channel.id] = "sent"
                 break
+            logger.info(
+                "alert delivery",
+                extra={"channel": channel.name, "kind": item.kind, "result": results[channel.id]},
+            )
             if results[channel.id] != "sent":
                 logger.warning(
                     "alert not delivered",

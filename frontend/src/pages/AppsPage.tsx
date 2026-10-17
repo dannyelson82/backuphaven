@@ -15,6 +15,7 @@ import {
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useBackups } from '../api/backups';
+import { DatabaseAddress } from '../components/DatabaseAddress';
 import { errorMessage } from '../api/client';
 import {
   type DiscoveredApp,
@@ -72,11 +73,13 @@ function AppRow({
   busy,
   onToggle,
   onRestore,
+  onDatabase,
 }: {
   app: DiscoveredApp;
   busy: boolean;
   onToggle: () => void;
   onRestore: () => void;
+  onDatabase: () => void;
 }) {
   const last = app.last_backup;
   const result = last ? RESULT[last.status] : undefined;
@@ -154,6 +157,11 @@ function AppRow({
               Restore…
             </Button>
           )}
+          {(app.external_databases?.length ?? 0) > 0 && (
+            <Button size="xs" variant="subtle" onClick={onDatabase}>
+              Database…
+            </Button>
+          )}
           <Button
             component="a"
             href={`api/v1/apps/${encodeURIComponent(app.name)}/plugin-brief`}
@@ -177,6 +185,7 @@ export function AppsPage() {
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [restoring, setRestoring] = useState<string | null>(null);
+  const [databaseOf, setDatabaseOf] = useState<string | null>(null);
 
   const scheduled = discovered.data?.scheduled ?? [];
   // Until the owner chooses, show everything when nothing is scheduled yet.
@@ -257,12 +266,14 @@ export function AppsPage() {
                 busy={busy === app.name}
                 onToggle={() => change(app.name, !app.scheduled)}
                 onRestore={() => setRestoring(app.name)}
+                onDatabase={() => setDatabaseOf(app.name)}
               />
             ))}
           </Stack>
         </>
       )}
       {restoring && <RestoreChoice app={restoring} onClose={() => setRestoring(null)} />}
+      {databaseOf && <DatabaseAddress app={databaseOf} onClose={() => setDatabaseOf(null)} />}
     </Stack>
   );
 }

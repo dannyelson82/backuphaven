@@ -36,6 +36,21 @@ goes missing quietly.
 Skipped items are rebuilt by the app itself after a restore. For Plex, that
 means posters and artwork download again over a while.
 
+## Apps with a database in another container
+
+Some apps keep their data in a database server running in its own container,
+for example RomM with MariaDB. Their plugin knows that: BackupHaven connects to
+the database server and makes a copy (a *dump*) of **just that app's database**,
+while everything keeps running, and stores it in the app's backup. Restoring the
+app loads it back; just before, BackupHaven saves the current database, so
+**Undo** can put that back too.
+
+The address, database name, user and password come from the app's Unraid
+template (for example `DB_HOST` and `DB_PASSWD`). If the address there is a
+container name BackupHaven can't reach, set the server's IP address and port on
+the **Apps** page with **Database…**. The password always comes from the
+template and is never shown or stored.
+
 ## PlanHaven
 
 PlanHaven keeps its data in its own PostgreSQL database. Its files can't be

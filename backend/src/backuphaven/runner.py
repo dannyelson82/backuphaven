@@ -24,6 +24,7 @@ from backuphaven.config import Settings
 from backuphaven.db import Database, DbCheck, Run, RunApp
 from backuphaven.db.types import utcnow
 from backuphaven.diagnostics import Diagnostics
+from backuphaven.docker_proxy import DockerProxy, ProxyError
 
 if TYPE_CHECKING:
     from backuphaven.alerts import AlertService
@@ -118,10 +119,17 @@ class AppResult:
             self.warnings.append(text)
 
 
-def not_installed(data_root: Path, app: discovery.App) -> str | None:
+def not_installed(
+    data_root: Path, app: discovery.App, containers: set[str] | None = None
+) -> str | None:
     """Why an app looks removed, or None. Removed containers keep their Unraid
-    template; when none of the app's data folders exist any more, there is
-    nothing to back up (ADR-0011). Apps on unmounted shares aren't judged."""
+    template. With the socket proxy (``containers``: names of all containers),
+    that is exact; without it, an app none of whose data folders exist is taken
+    as removed (ADR-0011). Apps on unmounted shares aren't judged."""
+    if containers is not None:
+        if app.name.lower() not in containers:
+            return f"not installed: there's no container named {app.name}"
+        return None
     if not app.folders or app.missing:
         return None
     for folder in app.folders:
@@ -191,8 +199,10 @@ class Runner:
         registry: PluginSource,
         diagnostics: Diagnostics | None = None,
         alerts: "AlertService | None" = None,
+        proxy: DockerProxy | None = None,
     ) -> None:
         self._alerts = alerts
+        self._proxy = proxy
         self._db = db
         self._diagnostics = diagnostics
         self._settings = settings
@@ -412,6 +422,16 @@ class Runner:
         except Exception:
             logger.exception("keep rules failed; no backups were deleted by this step")
 
+    def _container_names(self) -> set[str] | None:
+        """All container names through the socket proxy, or None without it."""
+        if self._proxy is None:
+            return None
+        try:
+            return {c.name.lower() for c in self._proxy.containers()}
+        except ProxyError as exc:
+            logger.warning("socket proxy unavailable", extra={"reason": str(exc)})
+            return None
+
     def _raise_alerts(self, status: str, results: list[AppResult], error: str | None) -> None:
         """Alerts for a finished run (phase 0.4): failures, damaged databases, apps
         without a plugin; and "recovered" for problems this run shows are gone."""
@@ -504,7 +524,7 @@ class Runner:
             },
         )
         base = f"apps/{key}"
-        gone = not_installed(self._settings.data_root, app)
+        gone = not_installed(self._settings.data_root, app, self._container_names())
         if gone is not None:
             result.skip(gone)
             logger.debug("app skipped", extra={"app": app.name, "reason": gone})

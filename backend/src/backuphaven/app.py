@@ -29,6 +29,7 @@ from backuphaven.config import Settings, get_settings
 from backuphaven.db import Database, Run
 from backuphaven.db.types import utcnow
 from backuphaven.diagnostics import SETTING_KEY, Diagnostics
+from backuphaven.docker_proxy import DockerProxy
 from backuphaven.headers import SecurityHeadersMiddleware
 from backuphaven.health import HealthCheck
 from backuphaven.middleware import RequestLogMiddleware
@@ -115,7 +116,10 @@ def create_app(
             return list(alert_channels.live_channels(session, app.state.secrets))
 
     app.state.alerts = AlertService(db, channels)
-    app.state.runner = Runner(db, settings, app.state.plugins, diagnostics, app.state.alerts)
+    app.state.proxy = DockerProxy(settings.docker_proxy) if settings.docker_proxy else None
+    app.state.runner = Runner(
+        db, settings, app.state.plugins, diagnostics, app.state.alerts, app.state.proxy
+    )
     app.state.restorer = Restorer(
         db,
         settings,

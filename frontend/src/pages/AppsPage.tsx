@@ -104,6 +104,16 @@ function AppRow({
                 Local plugin
               </Badge>
             )}
+            {app.container === 'running' && (
+              <Badge variant="dot" color="green">
+                Running
+              </Badge>
+            )}
+            {app.container === 'stopped' && (
+              <Badge variant="dot" color="gray">
+                Stopped
+              </Badge>
+            )}
             {app.not_installed && (
               <Badge variant="light" color="gray">
                 Not installed

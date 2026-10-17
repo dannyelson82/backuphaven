@@ -12,6 +12,7 @@ from backuphaven import audit, discovery, external, schedule
 from backuphaven.api.deps import DbDep, InteractiveDep, csrf_protect, require_setup_done
 from backuphaven.config import Settings
 from backuphaven.db import Run, RunApp
+from backuphaven.docker_proxy import DockerProxy, ProxyError
 from backuphaven.plugins import registry
 from backuphaven.runner import not_installed
 
@@ -40,6 +41,9 @@ class AppView(BaseModel):
     plugin_local: bool = False
     # The plugin's databases in other containers (ids), if any (ADR-0014).
     external_databases: list[str] = []
+    # Through the socket proxy: running, stopped, or missing (no such container);
+    # None without the proxy.
+    container: str | None = None
     folders: list[DataFolderView]
     missing: list[DataFolderView]
     # In the backup schedule (ADR-0011).
@@ -88,6 +92,7 @@ def discovered(request: Request, db: DbDep, _principal: InteractiveDep) -> Disco
         scheduled = schedule.load_apps(session)
     in_schedule = {n.lower() for n in scheduled}
     last = _last_backups(db)
+    containers = _containers(request)
     pairs = []
     for found in apps:
         plugin = known.match(found.image)
@@ -110,7 +115,12 @@ def discovered(request: Request, db: DbDep, _principal: InteractiveDep) -> Disco
                 folders=[DataFolderView(**vars(f)) for f in app.folders],
                 missing=[DataFolderView(**vars(m)) for m in app.missing],
                 scheduled=app.name.lower() in in_schedule,
-                not_installed=not_installed(settings.data_root, app),
+                not_installed=not_installed(
+                    settings.data_root, app, None if containers is None else set(containers)
+                ),
+                container=None
+                if containers is None
+                else containers.get(app.name.lower(), "missing"),
                 last_backup=last.get(app.name.lower()),
             )
             for app, plugin in pairs
@@ -346,3 +356,40 @@ def clear_database_address(
         external.save_override(session, app.name, db_id, None)
         audit.record(session, principal.actor, "app.database_address", app.name, {"cleared": db_id})
     return app_databases(name, request, db, principal)
+
+
+def _containers(request: Request) -> dict[str, str] | None:
+    """Container name (lower case) -> "running"/"stopped", or None without a proxy."""
+    proxy: DockerProxy | None = request.app.state.proxy
+    if proxy is None:
+        return None
+    try:
+        return {c.name.lower(): "running" if c.running else "stopped" for c in proxy.containers()}
+    except ProxyError:
+        return None
+
+
+class DockerStatusView(BaseModel):
+    configured: bool
+    address: str | None
+    ok: bool
+    error: str | None
+    containers: int
+
+
+@router.get("/settings/docker")
+def docker_status(request: Request, _principal: InteractiveDep) -> DockerStatusView:
+    """Whether the socket proxy is set up and answering (ADR-0005)."""
+    settings: Settings = request.app.state.settings
+    proxy: DockerProxy | None = request.app.state.proxy
+    if proxy is None:
+        return DockerStatusView(configured=False, address=None, ok=False, error=None, containers=0)
+    try:
+        count = len(proxy.containers())
+    except ProxyError as exc:
+        return DockerStatusView(
+            configured=True, address=settings.docker_proxy, ok=False, error=str(exc), containers=0
+        )
+    return DockerStatusView(
+        configured=True, address=settings.docker_proxy, ok=True, error=None, containers=count
+    )

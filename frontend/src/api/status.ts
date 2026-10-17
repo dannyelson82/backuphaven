@@ -132,6 +132,7 @@ export interface DiscoveredApp {
   plugin_name?: string | null;
   plugin_local?: boolean;
   external_databases?: string[];
+  container?: 'running' | 'stopped' | 'missing' | null;
   folders: { target: string; host: string; share: string }[];
   missing: { target: string; host: string; share: string }[];
   scheduled: boolean;

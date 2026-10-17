@@ -23,5 +23,6 @@
   <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="Owner of the files BackupHaven creates (its settings and backups)." Type="Variable" Display="advanced" Required="true" Mask="false">99</Config>
   <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Group of the files BackupHaven creates." Type="Variable" Display="advanced" Required="true" Mask="false">100</Config>
   <Config Name="UMASK" Target="UMASK" Default="022" Mode="" Description="Permissions mask for created files." Type="Variable" Display="advanced" Required="false" Mask="false">022</Config>
+  <Config Name="Docker socket proxy" Target="BACKUPHAVEN_DOCKER_PROXY" Default="" Mode="" Description="Optional: the address of a linuxserver socket-proxy (list/start/stop only), e.g. tcp://socket-proxy:2375. See the guide: The socket proxy." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="TZ" Target="TZ" Default="" Mode="" Description="Time zone for the nightly schedule, e.g. Europe/London. Unraid usually fills this in." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 </Container>

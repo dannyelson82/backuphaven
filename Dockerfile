@@ -35,8 +35,19 @@ RUN uv sync --locked --no-dev --no-editable
 
 # --- 3. Runtime ---------------------------------------------------------------
 FROM ${DEBIAN_IMAGE}
+# Database clients for apps whose database lives in another container (ADR-0014):
+# MariaDB's from Debian; PostgreSQL's newest from the PostgreSQL project, since
+# pg_dump must be at least as new as the server it dumps.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends python3 tini \
+ && apt-get install -y --no-install-recommends ca-certificates curl \
+ && install -d -m 0755 /usr/share/postgresql-common/pgdg \
+ && curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+      https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+ && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt trixie-pgdg main" \
+      > /etc/apt/sources.list.d/pgdg.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends python3 tini mariadb-client postgresql-client-18 \
+ && apt-get purge -y --auto-remove curl \
  && rm -rf /var/lib/apt/lists/* \
  && install -d -m 0755 /config /backups
 

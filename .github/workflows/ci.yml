@@ -16,6 +16,30 @@ jobs:
   backend:
     name: Backend
     runs-on: ubuntu-latest
+    # Real database servers for the dump/load tests (ADR-0014).
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: rootpass
+          MARIADB_DATABASE: bhtest
+          MARIADB_USER: bh
+          MARIADB_PASSWORD: bhpass
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: pgpass
+          POSTGRES_DB: bhtest
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      BH_TEST_MARIADB: "127.0.0.1:3306:bh:bhpass"
+      BH_TEST_POSTGRES: "127.0.0.1:5432:postgres:pgpass"
     defaults:
       run:
         working-directory: backend
@@ -27,6 +51,8 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: backend/uv.lock
+      - name: Database clients
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mariadb-client postgresql-client
       - name: Install
         run: uv sync --locked
       - name: Lint

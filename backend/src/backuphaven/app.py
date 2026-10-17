@@ -37,6 +37,7 @@ from backuphaven.restore import Restorer
 from backuphaven.runner import Runner, remove_leftovers
 from backuphaven.scheduler import Scheduler
 from backuphaven.secretbox import SecretBox
+from backuphaven.summary import MorningSummary
 
 logger = logging.getLogger(__name__)
 
@@ -128,10 +129,12 @@ def create_app(
     def housekeeping() -> None:
         app.state.restorer.expire()
         health.maybe_run()
+        app.state.summary.maybe_send()
 
     app.state.scheduler = Scheduler(
         db, app.state.runner, settings, housekeeping=housekeeping, alerts=app.state.alerts
     )
+    app.state.summary = MorningSummary(db, app.state.alerts, app.state.scheduler, settings.tz)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestLogMiddleware)
 

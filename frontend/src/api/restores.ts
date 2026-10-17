@@ -6,6 +6,7 @@ export interface RestoreCheck {
   folders: { target: string; host: string; exists: boolean; in_backup: boolean }[];
   changing: string[];
   stopped: boolean;
+  auto_stop?: boolean;
 }
 
 export interface Restore {

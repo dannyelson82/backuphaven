@@ -68,7 +68,8 @@ def check_restore(
 def start_restore(
     body: RestoreRequest, request: Request, db: DbDep, principal: InteractiveDep
 ) -> dict[str, int]:
-    if not body.confirmed_stopped:
+    # With the socket proxy BackupHaven stops and starts the container itself.
+    if not body.confirmed_stopped and _restorer(request).container(body.app) is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "stop the container first")
     try:
         restore_id = _restorer(request).start(body.run_id, body.app, principal.actor)

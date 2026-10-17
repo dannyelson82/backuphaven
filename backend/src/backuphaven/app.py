@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from backuphaven import __version__, settings_store
+from backuphaven.alerts import AlertService
 from backuphaven.api import (
     app_routes,
     auth_routes,
@@ -28,6 +29,7 @@ from backuphaven.db import Database, Run
 from backuphaven.db.types import utcnow
 from backuphaven.diagnostics import SETTING_KEY, Diagnostics
 from backuphaven.headers import SecurityHeadersMiddleware
+from backuphaven.health import HealthCheck
 from backuphaven.middleware import RequestLogMiddleware
 from backuphaven.plugins.registry import LOCAL_DIR_NAME, PluginStore
 from backuphaven.restore import Restorer
@@ -81,9 +83,11 @@ def create_app(
         removed = remove_leftovers(settings.backups_dir)
         if removed:
             logger.info("removed what an interrupted run left behind", extra={"files": removed})
+        app.state.alerts.start()
         app.state.scheduler.start()
         yield
         app.state.scheduler.stop()
+        app.state.alerts.stop()
         diagnostics.disable()
         db.close()
 
@@ -103,12 +107,24 @@ def create_app(
     app.state.gateway_seen_at = None
     app.state.diagnostics = diagnostics
     app.state.plugins = PluginStore(settings.config_dir / LOCAL_DIR_NAME)
-    app.state.runner = Runner(db, settings, app.state.plugins, diagnostics)
+    app.state.alerts = AlertService(db)
+    app.state.runner = Runner(db, settings, app.state.plugins, diagnostics, app.state.alerts)
     app.state.restorer = Restorer(
-        db, settings, app.state.plugins, app.state.runner.lock, settings.restore_quiet_s
+        db,
+        settings,
+        app.state.plugins,
+        app.state.runner.lock,
+        settings.restore_quiet_s,
+        alerts=app.state.alerts,
     )
+    health = HealthCheck(db, settings, app.state.alerts)
+
+    def housekeeping() -> None:
+        app.state.restorer.expire()
+        health.maybe_run()
+
     app.state.scheduler = Scheduler(
-        db, app.state.runner, settings, housekeeping=app.state.restorer.expire
+        db, app.state.runner, settings, housekeeping=housekeeping, alerts=app.state.alerts
     )
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestLogMiddleware)

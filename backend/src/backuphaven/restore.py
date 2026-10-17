@@ -32,7 +32,7 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from backuphaven import unpack
 from backuphaven.config import Settings
@@ -51,6 +51,9 @@ from backuphaven.selection import (
     matches,
     resolve_app_folder,
 )
+
+if TYPE_CHECKING:
+    from backuphaven.alerts import AlertService
 
 logger = logging.getLogger(__name__)
 
@@ -286,7 +289,9 @@ class Restorer:
         lock: threading.Lock,
         quiet_seconds: float = QUIET_SECONDS,
         sleep: Callable[[float], None] = time.sleep,
+        alerts: "AlertService | None" = None,
     ) -> None:
+        self._alerts = alerts
         self._sleep = sleep
         self._db = db
         self._settings = settings
@@ -446,6 +451,17 @@ class Restorer:
                     row.finished_at = utcnow()
                     row.undo_until = None if error else utcnow() + timedelta(days=UNDO_DAYS)
                     row.detail = {"folders": done, "archive": p.archive.name}
+            if self._alerts is not None:
+                key = f"restore_failed:{p.app}"
+                if error:
+                    self._alerts.raise_(
+                        "restore_failed",
+                        key,
+                        f"Restoring {p.app} didn't finish: {error}. Its files were put back as "
+                        "they were.",
+                    )
+                else:
+                    self._alerts.resolve(key, f"{p.app} was restored.")
             logger.info(
                 "restore finished",
                 extra={"restore_id": restore_id, "app": p.app, "error": error},

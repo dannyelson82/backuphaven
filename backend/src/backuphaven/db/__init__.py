@@ -2,6 +2,7 @@
 
 from backuphaven.db.engine import Database
 from backuphaven.db.models import (
+    Alert,
     AuditLog,
     AuthSession,
     Base,
@@ -14,6 +15,7 @@ from backuphaven.db.models import (
 )
 
 __all__ = [
+    "Alert",
     "AuditLog",
     "AuthSession",
     "Base",

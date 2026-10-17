@@ -111,6 +111,9 @@ jobs:
           grep -E '^CapEff:\s+00000000000000db$' caps.txt
           grep -E '^CapBnd:\s+00000000000000db$' caps.txt
           grep -E '^NoNewPrivs:\s+1$' caps.txt
+          # The database tools for apps with a separate database (ADR-0014).
+          docker exec bh mariadb-dump --version
+          docker exec bh pg_dump --version | grep -q " 18"
           docker exec bh stat -c '%u:%g %n' /config /backups | tee owners.txt
           test "$(grep -c '^99:100 ' owners.txt)" = 2
           docker logs bh 2>&1 | tail -n 20

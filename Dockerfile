@@ -2,8 +2,8 @@
 # BackupHaven image (ARCHITECTURE.md §12, ADR-0002).
 # Built only by GitHub Actions; there is no Docker in the dev environment.
 
-ARG DEBIAN_IMAGE=debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
-ARG NODE_IMAGE=node:24-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66
+ARG DEBIAN_IMAGE=debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4
+ARG NODE_IMAGE=node:24-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446
 ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.12.19
 
 # --- 1. Frontend: static files ------------------------------------------------
@@ -39,6 +39,7 @@ FROM ${DEBIAN_IMAGE}
 # MariaDB's from Debian; PostgreSQL's newest from the PostgreSQL project, since
 # pg_dump must be at least as new as the server it dumps.
 RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
  && apt-get install -y --no-install-recommends ca-certificates curl \
  && install -d -m 0755 /usr/share/postgresql-common/pgdg \
  && curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \

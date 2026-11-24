@@ -1,6 +1,7 @@
 """Alert channels (phase 0.4 chunk 2) against fake servers."""
 
 import json
+import smtplib
 import threading
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -173,3 +174,20 @@ def test_channels_load_with_their_secrets_decrypted(tmp_path: Path) -> None:
     with db.read() as session:
         [live] = alert_channels.live_channels(session, box)
     assert live.name == "d" and live.wants("run_failed") and not live.wants("summary")
+
+
+def test_public_error_never_repeats_the_exception_text() -> None:
+    from backuphaven.alert_channels import SendError, public_error
+
+    hook = "https://example.com/api/webhook/my-secret-hook"
+    assert public_error(SendError(f"the server answered 500 at {hook}", 500)) == (
+        "the server answered with error 500"
+    )
+    assert public_error(SendError(f"can't reach {hook}")) == "can't reach the server"
+    assert "refused the user name" in public_error(smtplib.SMTPAuthenticationError(535, b"no"))
+    assert (
+        public_error(smtplib.SMTPDataError(554, b"spam")) == "the mail server refused the message"
+    )
+    assert public_error(TimeoutError(hook)) == "can't reach the server"
+    for exc in (ValueError(hook), Exception(hook)):
+        assert "secret" not in public_error(exc)

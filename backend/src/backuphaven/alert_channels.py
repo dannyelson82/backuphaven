@@ -121,6 +121,34 @@ def validate(config: ChannelConfig, secret: str | None) -> None:
         _check_url(secret)
 
 
+class SendError(RuntimeError):
+    """A channel couldn't deliver. ``status`` is the HTTP status if the server answered."""
+
+    def __init__(self, message: str, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
+
+
+def public_error(exc: BaseException) -> str:
+    """A short, fixed description of a failed send, safe to show in the UI.
+
+    Never built from the exception's text: outside services and libraries can put
+    addresses (which may be the secret, e.g. a webhook) or server replies in it.
+    The full reason goes to the log, where secrets are redacted.
+    """
+    if isinstance(exc, SendError):
+        if exc.status is not None:
+            return f"the server answered with error {int(exc.status)}"
+        return "can't reach the server"
+    if isinstance(exc, smtplib.SMTPAuthenticationError):
+        return "the mail server refused the user name or password"
+    if isinstance(exc, smtplib.SMTPException):
+        return "the mail server refused the message"
+    if isinstance(exc, OSError):
+        return "can't reach the server"
+    return "sending failed; the log has the details"
+
+
 def _post(url: str, body: bytes, headers: dict[str, str]) -> None:
     _check_url(url)
     request = urllib.request.Request(url, data=body, headers=headers, method="POST")  # noqa: S310 - http(s) only, checked
@@ -128,9 +156,9 @@ def _post(url: str, body: bytes, headers: dict[str, str]) -> None:
         with urllib.request.urlopen(request, timeout=TIMEOUT_S) as response:  # noqa: S310
             response.read(1024)
     except urllib.error.HTTPError as exc:
-        raise RuntimeError(f"the server answered {exc.code} {exc.reason}") from None
+        raise SendError(f"the server answered {exc.code} {exc.reason}", exc.code) from None
     except urllib.error.URLError as exc:
-        raise RuntimeError(f"can't reach the server: {exc.reason}") from None
+        raise SendError(f"can't reach the server: {exc.reason}") from None
 
 
 class LiveChannel:

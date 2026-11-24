@@ -164,9 +164,9 @@ def test_address_override_api(unraid: Settings, romm: Path) -> None:
         assert view["host"] == "mariadb" and view["port"] == 3306 and view["from_template"] is True
         assert "db-secret-77" not in admin.get(f"{API}/apps/romm/databases").text
         [view] = admin.put(
-            f"{API}/apps/romm/databases/main", json={"host": "192.168.50.10", "port": 3307}
+            f"{API}/apps/romm/databases/main", json={"host": "192.168.1.10", "port": 3307}
         ).json()
-        assert (view["host"], view["port"], view["from_template"]) == ("192.168.50.10", 3307, False)
+        assert (view["host"], view["port"], view["from_template"]) == ("192.168.1.10", 3307, False)
         assert (
             admin.put(
                 f"{API}/apps/romm/databases/main", json={"host": "-bad host", "port": 1}

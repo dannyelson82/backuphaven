@@ -1,0 +1,5 @@
+# Example addresses used in tests and docs that the privacy check may allow.
+# Never list a real address here.
+10.1.2.3
+172.16.0.1
+172.31.255.255

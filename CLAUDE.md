@@ -19,6 +19,10 @@ recorded in docs/adr/.
 - Never commit secrets, real app data, backups, or personal infrastructure
   details (IPs, domains, container names). Setup-specific notes go in the
   gitignored LOCAL_NOTES.md.
+- CI's **Privacy check** (`.github/scripts/privacy-check.py`) fails when new
+  commits add real private or Tailscale addresses or real `*.ts.net` names,
+  or use a computer's local address as commit email (it must be the GitHub
+  noreply address). Genuine example addresses go in `.privacy-allow`.
 - No sudo, no Docker socket. Images are built by GitHub Actions only.
 - Every file access goes through the file-access layer: scoped to the app's
   folders, `realpath` checked, and no writes to data shares outside a restore.

@@ -16,7 +16,10 @@ jobs:
   backend:
     name: Backend
     runs-on: ubuntu-latest
-    # Real database servers for the dump/load tests (ADR-0014).
+    # Real database servers for the dump/load tests (ADR-0014). PostgreSQL's
+    # server and client stay on the same major version as the image's
+    # postgresql-client (Dockerfile): a newer pg_restore sends settings an older
+    # server rejects (e.g. "SET transaction_timeout" from 17 on).
     services:
       mariadb:
         image: mariadb:11
@@ -30,7 +33,7 @@ jobs:
           --health-cmd "healthcheck.sh --connect --innodb_initialized"
           --health-interval 5s --health-timeout 5s --health-retries 20
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_PASSWORD: pgpass
           POSTGRES_DB: bhtest
@@ -52,7 +55,8 @@ jobs:
           enable-cache: true
           cache-dependency-glob: backend/uv.lock
       - name: Database clients
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mariadb-client postgresql-client
+        # postgresql-client-18 matches the image and the postgres:18 service above.
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mariadb-client postgresql-client-18
       - name: Install
         run: uv sync --locked
       - name: Lint

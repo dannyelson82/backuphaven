@@ -2,9 +2,9 @@
 # BackupHaven image (ARCHITECTURE.md §12, ADR-0002).
 # Built only by GitHub Actions; there is no Docker in the dev environment.
 
-ARG DEBIAN_IMAGE=debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4
-ARG NODE_IMAGE=node:24-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446
-ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.12.19
+ARG DEBIAN_IMAGE=debian:trixie-slim@sha256:8aa5a7bf5a1955bddbe7d74fcdd0b91ab30e74362a8b73af672b0481b35b44a0
+ARG NODE_IMAGE=node:24-trixie-slim@sha256:fe9b16c1666f3b5c89aa27efb5a1233e29767d135bbd3c7afb167b58387c9e7f
+ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.13.9
 
 # --- 1. Frontend: static files ------------------------------------------------
 FROM ${NODE_IMAGE} AS frontend
@@ -34,7 +34,9 @@ COPY backend/src ./src
 RUN uv sync --locked --no-dev --no-editable
 
 # --- 3. Runtime ---------------------------------------------------------------
-FROM ${DEBIAN_IMAGE}
+# Named so CI can rebuild it without the layer cache (image.yml, no-cache-filters):
+# otherwise a cached layer keeps old packages and "apt-get upgrade" never runs.
+FROM ${DEBIAN_IMAGE} AS runtime
 # Database clients for apps whose database lives in another container (ADR-0014):
 # MariaDB's from Debian; PostgreSQL's newest from the PostgreSQL project, since
 # pg_dump must be at least as new as the server it dumps.

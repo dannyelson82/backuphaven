@@ -44,7 +44,12 @@ Add one or more in **Settings → Alerts → Add a channel**:
 Tokens, passwords and webhook addresses are stored encrypted and never shown
 again. When editing a channel, leave that field empty to keep the saved one.
 
-Press **Send test** to check a channel. Under **Send these alerts**, choose
+Press **Send test** to check a channel. If it fails, BackupHaven says what kind
+of problem it was (for example "can't reach the server"); the full details are
+in the container's log (on Unraid: the BackupHaven icon on the Docker tab →
+**Logs**), with passwords and tokens hidden.
+
+Under **Send these alerts**, choose
 which alerts each channel gets, for example everything to your phone and only
 **Database damaged** by email.
 

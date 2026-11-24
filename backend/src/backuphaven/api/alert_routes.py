@@ -187,7 +187,7 @@ def test_channel(
             "channel test failed",
             extra={"channel": config.name, "type": config.type, "reason": str(exc)[:300]},
         )
-        return {"ok": False, "error": str(exc)[:300]}
+        return {"ok": False, "error": alert_channels.public_error(exc)}
     logger.info("channel test sent", extra={"channel": config.name, "type": config.type})
     return {"ok": True, "error": None}
 

@@ -40,6 +40,10 @@ jobs:
           tags: backuphaven:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # Always rebuild the runtime stage so it gets the newest Debian security
+          # updates (a cached apt layer stays at the packages of its first build).
+          # Publish below then reuses exactly this tested layer from the cache.
+          no-cache-filters: runtime
 
       - name: Smoke test
         run: |
